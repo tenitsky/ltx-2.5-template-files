@@ -1,0 +1,5 @@
+# Normalize line endings: shell scripts must stay LF (they run on Linux pods)
+* text=auto
+*.sh text eol=lf
+*.json text
+*.md text
