@@ -39,7 +39,7 @@ Core set ≈ **39 GB**; with both optional files ≈ **47 GB**. Use a **64 GB vo
 **Docker command** (host `setup.sh` in a GitHub repo, e.g. the same repo you used for the Z-Image template):
 
 ```bash
-bash -c "git clone --depth 1 https://github.com/YOUR_USER/YOUR_TEMPLATE_REPO /tmp/temp_repo && bash /tmp/temp_repo/setup.sh"
+bash -c "git clone --depth 1 https://github.com/tenitsky/ltx-2.5-template-files /tmp/temp_repo && bash /tmp/temp_repo/setup.sh"
 ```
 
 ## Hugging Face token (important)
