@@ -18,6 +18,12 @@ UPDATE_COMFYUI="${UPDATE_COMFYUI:-1}"
 DOWNLOAD_PROMPT_ENHANCER="${DOWNLOAD_PROMPT_ENHANCER:-1}"
 DOWNLOAD_TEMPORAL_UPSCALER="${DOWNLOAD_TEMPORAL_UPSCALER:-1}"
 
+# Every workflow this template ships uses core ComfyUI nodes only, so the Lightricks
+# node pack is off by default: its requirements (openimageio, diffusers, a transformers
+# bump) often fail to build and can disturb the baked environment. Set to 1 if you want
+# the extra LTXV nodes for your own workflows.
+INSTALL_LTXVIDEO_NODES="${INSTALL_LTXVIDEO_NODES:-0}"
+
 # The official weights repo (Lightricks/LTX-2.5) is license-gated: set HF_TOKEN
 # to a Hugging Face read token whose account has accepted the LTX-2.x license.
 # If no token is set, or the gated download fails, the script automatically
@@ -42,12 +48,19 @@ fetch_hf() {
   # $1 = destination file, $2 = repo id, $3 = path inside the repo
   local dest="$1" repo="$2" rpath="$3"
   local url="https://huggingface.co/$repo/resolve/main/$rpath"
+  # Resume into a partial file keyed to the source repo, so an interrupted download
+  # from one repo is never resumed against a different repo's URL (which would splice
+  # two files together and silently corrupt the weights).
+  local part="$dest.$(echo "$repo" | tr '/' '_').part"
   if [ -n "$HF_TOKEN" ]; then
     wget -c -q --show-progress --tries=3 --read-timeout=120 \
-      --header="Authorization: Bearer $HF_TOKEN" -O "$dest" "$url" || true
+      --header="Authorization: Bearer $HF_TOKEN" -O "$part" "$url" || true
   fi
-  if ! file_ok "$dest"; then
-    wget -c -q --show-progress --tries=3 --read-timeout=120 -O "$dest" "$url" || true
+  if ! file_ok "$part"; then
+    wget -c -q --show-progress --tries=3 --read-timeout=120 -O "$part" "$url" || true
+  fi
+  if file_ok "$part"; then
+    mv -f "$part" "$dest"
   fi
 }
 
@@ -88,16 +101,46 @@ if [ ! -f "$COMFYUI_PATH/main.py" ]; then
   cp -r /opt/comfyui-baked "$COMFYUI_PATH"
 fi
 
+# Use the interpreter ComfyUI actually runs from. The runpod/comfyui:cuda12.8 image
+# keeps ComfyUI in its own venv, so a bare `pip install` puts packages in the system
+# python where ComfyUI never sees them.
+PY="$COMFYUI_PATH/.venv-cu128/bin/python"
+[ -x "$PY" ] || PY="$COMFYUI_PATH/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+PIP="$PY -m pip"
+echo "Using python: $PY"
+
 # 0. Update ComfyUI core so LTX-2.5 native nodes + workflow templates exist
 if [ "$UPDATE_COMFYUI" = "1" ]; then
   echo "Updating ComfyUI core (needed for native LTX-2.5 support)..."
   if [ -d "$COMFYUI_PATH/.git" ]; then
-    git -C "$COMFYUI_PATH" pull --ff-only || echo "WARN: git pull failed, keeping baked version."
+    # The baked checkout can sit on a detached HEAD/tag, where --ff-only has nothing to
+    # fast-forward; fetch + hard-reset to the remote default branch handles both cases.
+    if ! git -C "$COMFYUI_PATH" pull --ff-only; then
+      echo "Fast-forward failed, resetting to origin's default branch..."
+      DEFAULT_BRANCH="$(git -C "$COMFYUI_PATH" remote show origin 2>/dev/null \
+        | sed -n 's/.*HEAD branch: //p')"
+      DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+      git -C "$COMFYUI_PATH" fetch --depth 1 origin "$DEFAULT_BRANCH" && \
+        git -C "$COMFYUI_PATH" reset --hard "origin/$DEFAULT_BRANCH" || \
+        echo "WARN: could not update ComfyUI, keeping baked version."
+    fi
   else
     echo "WARN: $COMFYUI_PATH is not a git repo, cannot pull updates."
   fi
-  pip install -q -U comfyui-frontend-package comfyui-workflow-templates || \
-    echo "WARN: could not update UI/workflow-template packages."
+
+  # Pulling new core code WITHOUT its new dependencies is the main way this template
+  # breaks: recent ComfyUI added packages (comfy-kitchen, comfy-aimdo, comfy-angle,
+  # blake3, av>=17) and pins exact frontend/workflow-template versions. Installing the
+  # repo's own requirements.txt keeps code and deps on the same version.
+  if [ -f "$COMFYUI_PATH/requirements.txt" ]; then
+    echo "Installing ComfyUI core requirements..."
+    $PIP install -q -r "$COMFYUI_PATH/requirements.txt" || \
+      echo "WARN: some core requirements failed to install; ComfyUI may not start."
+  else
+    $PIP install -q -U comfyui-frontend-package comfyui-workflow-templates || \
+      echo "WARN: could not update UI/workflow-template packages."
+  fi
 fi
 
 # 1. Move custom nodes to the official ComfyUI directory
@@ -107,16 +150,20 @@ mkdir -p "$COMFYUI_PATH/custom_nodes"
 if [ -d /tmp/temp_repo/custom_nodes ]; then
   cp -r /tmp/temp_repo/custom_nodes/* "$COMFYUI_PATH/custom_nodes/" 2>/dev/null || true
 fi
-# Official Lightricks node pack (extra LTX I2V/advanced nodes on top of native support)
-if [ ! -d "$COMFYUI_PATH/custom_nodes/ComfyUI-LTXVideo" ]; then
-  git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo \
-    "$COMFYUI_PATH/custom_nodes/ComfyUI-LTXVideo" || \
-    echo "WARN: could not clone ComfyUI-LTXVideo; native LTX-2.5 nodes still work."
+# Official Lightricks node pack - optional, see INSTALL_LTXVIDEO_NODES above.
+if [ "$INSTALL_LTXVIDEO_NODES" = "1" ]; then
+  if [ ! -d "$COMFYUI_PATH/custom_nodes/ComfyUI-LTXVideo" ]; then
+    git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo \
+      "$COMFYUI_PATH/custom_nodes/ComfyUI-LTXVideo" || \
+      echo "WARN: could not clone ComfyUI-LTXVideo; native LTX-2.5 nodes still work."
+  fi
+else
+  echo "Skipping ComfyUI-LTXVideo (INSTALL_LTXVIDEO_NODES=0); bundled workflows use core nodes only."
 fi
 
 # 2. Automatically find and install requirements for your custom nodes
 echo "Installing node requirements..."
-find "$COMFYUI_PATH/custom_nodes/" -name "requirements.txt" -exec pip install -r {} \;
+find "$COMFYUI_PATH/custom_nodes/" -name "requirements.txt" -exec $PIP install -r {} \;
 
 # 2.5 Install bundled workflows into ComfyUI's workflow menu
 echo "Installing bundled workflows..."

@@ -5,10 +5,12 @@ One-shot template that installs and runs **Lightricks LTX-2.5** (22B video + syn
 On first pod boot it automatically:
 
 1. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI` (self-healing, skip-if-present)
-2. Updates ComfyUI core + workflow templates so the **native LTX-2.5 nodes** exist
-3. Installs the official `ComfyUI-LTXVideo` custom node pack (Lightricks)
+2. Updates ComfyUI core **and installs that commit's `requirements.txt`**, so the **native LTX-2.5 nodes** exist and the new core dependencies come with them
+3. Installs the two bundled lipsync workflows into ComfyUI's Workflows sidebar
 4. Downloads all LTX-2.5 model files into the correct `models/` folders (skip-if-exists, resumable)
 5. Hands over to `/start.sh` (ComfyUI on port 3000)
+
+> **No custom nodes required.** Every bundled workflow runs on core ComfyUI nodes only. The Lightricks `ComfyUI-LTXVideo` pack is available but **off by default** (`INSTALL_LTXVIDEO_NODES=1` to enable) — its dependencies (`openimageio`, `diffusers`, a `transformers` bump) often fail to build and can disturb the baked environment.
 
 ## Models pulled
 
@@ -55,18 +57,26 @@ Without `HF_TOKEN` the script still works — it automatically falls back to an 
 ## After it boots
 
 - Open ComfyUI (port 3000) → **Workflow → Browse Templates** → search **"LTX-2.5"** for the three native workflows: **Text to Video (T2V)**, **Image to Video (I2V)**, **FLF2V** (first/last frame).
-- Or use the **bundled lipsync workflow** (see next section).
+- Or open the **Workflows** sidebar for the two bundled lipsync workflows — `lipsync_audio_ia2v_workflow` (photo + your audio file) and `lipsync_i2v_workflow` (photo + written script). See the sections below.
 - First boot downloads ~40–47 GB from HF; later boots skip everything and start in seconds (files persist on the network volume).
 - Re-runs are safe: every step is skip-if-present and downloads resume (`wget -c`).
 
 ## Repository layout
 
 ```
-├── setup.sh                      # RunPod boot script (Docker Command target)
+├── setup.sh                             # RunPod boot script (Docker Command target)
 ├── README.md
-└── workflows/                    # auto-installed into ComfyUI's Workflows menu on boot
-    └── lipsync_i2v_workflow.json # LTX-2.5: person photo + dialogue script → talking video
+└── workflows/                           # auto-installed into ComfyUI's Workflows menu on boot
+    ├── lipsync_audio_ia2v_workflow.json # photo + YOUR audio file → lipsynced video
+    └── lipsync_i2v_workflow.json        # photo + written dialogue → talking video (voice generated)
 ```
+
+**Which one do you want?**
+
+| You have | Use |
+|---|---|
+| A photo **and a voiceover/audio file** → lips must match *that* recording | `lipsync_audio_ia2v_workflow.json` |
+| A photo and a **written script**, happy for the model to generate the voice | `lipsync_i2v_workflow.json` |
 
 ## Bundled lipsync workflow (`workflows/lipsync_i2v_workflow.json`)
 
@@ -84,7 +94,36 @@ Person photo + dialogue script → talking video with **lip-synced speech audio*
 4. Knobs on the main node: `prompt_enhance` (leave **off** for scripted dialogue), `duration` (s), `width/height`, seed, frame rate; the **ResolutionSelector** node sets aspect/size.
 5. **Queue** → result lands in `ComfyUI/output/` as `LTX-2.5_lipsync_*.mp4` **with audio**.
 
-**Want to drive lips from your own voiceover file instead of text?** That's the audio-conditioned flow (`image + audio → video`); LTX-2.3's IA2V template/nodes cover it — native LTX-2.5 templates are T2V / I2V / FLF2V.
+**Want to drive lips from your own voiceover file instead?** Use the workflow below.
+
+## Audio-driven lipsync workflow (`workflows/lipsync_audio_ia2v_workflow.json`)
+
+**Person photo + your own audio file → video whose lips match that recording.**
+
+Comfy ships an official image+audio→video (IA2V) template for **LTX-2.3** but not for LTX-2.5 (the stock 2.5 templates are T2V / I2V / FLF2V, where audio is *generated* from the prompt). This workflow ports the 2.3 IA2V technique onto the LTX-2.5 two-stage I2V graph, so you get 2.5 quality with your own audio track.
+
+**How it works:** LTX-2.5 is a joint audio+video model — it denoises one latent containing both streams. The stock I2V workflow seeds the audio half with `LTXVEmptyLatentAudio` (empty → model invents the voice). This workflow instead encodes your file with `LTXVAudioVAEEncode` and pins it using `SetLatentNoiseMask` with a `SolidMask` of value **0**. A zero noise mask means "never denoise this", so your audio survives untouched and the sampler can only generate the *video* that fits it — which is what produces the lipsync. The mask propagates through the second (upscale) stage too, so the audio stays locked end to end.
+
+```
+LoadAudio → TrimAudioDuration → LTXVAudioVAEEncode ─┐
+                                 SolidMask(0) ──→ SetLatentNoiseMask
+                                                    └→ LTXVConcatAVLatent → sampler → …
+LoadImage → LTXVPreprocess → LTXVImgToVideoInplace ──┘
+```
+
+**How to use:**
+
+1. ComfyUI → **Workflows** sidebar → `lipsync_audio_ia2v_workflow`.
+2. **Load Image** — your person photo (front-facing, face clearly visible).
+3. **Load Voiceover / Dialogue Audio** — upload your `.mp3` / `.wav` / `.flac`. Use **stereo**; mono clips frequently produce weak or no lipsync.
+4. **`duration`** (on the main node) — seconds of video. The audio is auto-trimmed to this same value, so **set it to your clip's length** (or shorter). Audio shorter than `duration` leaves the tail unsynced.
+5. **`prompt`** — describe the person, framing and delivery. **Do not write the dialogue** — the words come from your audio file, not the prompt.
+6. Leave **`prompt_enhance` off**; it rewrites your prompt and works against the lipsync.
+7. **Queue** → `ComfyUI/output/LTX-2.5_lipsync_*.mp4`, with your audio muxed in.
+
+**If the second stage OOMs**, add `--reserve-vram 1` to `/workspace/runpod-slim/comfyui_args.txt` (one flag per line, picked up automatically) and restart the pod.
+
+**Uses core ComfyUI nodes only** — `LoadAudio`, `TrimAudioDuration`, `LTXVAudioVAEEncode`, `SolidMask`, `SetLatentNoiseMask`, `LTXVConcatAVLatent` and friends all ship with ComfyUI. Nothing extra to install.
 
 ## GPU guidance
 
@@ -101,9 +140,10 @@ Person photo + dialogue script → talking video with **lip-synced speech audio*
 | `HF_TOKEN` | *(empty)* | Hugging Face read token for the gated official repo |
 | `JUPYTER_PASSWORD` | *(empty)* | Token for JupyterLab on port 8888 (always boots; set a value!) |
 | `FILEBROWSER_PASSWORD` | `adminadmin12` | Password for FileBrowser on port 8080 (user `admin`) — **change the default** |
-| `UPDATE_COMFYUI` | `1` | `0` = skip ComfyUI core/UI update |
-| `DOWNLOAD_PROMPT_ENHANCER` | `1` | `0` = skip 8.1 GB prompt-enhancer encoder |
+| `UPDATE_COMFYUI` | `1` | `0` = skip ComfyUI core update + core `requirements.txt` install |
+| `DOWNLOAD_PROMPT_ENHANCER` | `1` | `0` = skip 8.1 GB prompt-enhancer encoder. Leave at `1`: both bundled workflows contain a `CLIPLoader` pointing at that file, and ComfyUI validates it even when the enhancer is switched off |
 | `DOWNLOAD_TEMPORAL_UPSCALER` | `1` | `0` = skip temporal upscaler |
+| `INSTALL_LTXVIDEO_NODES` | `0` | `1` = also clone the Lightricks `ComfyUI-LTXVideo` pack. Not needed by anything bundled here |
 
 ## What boots in the container (from the image's `start.sh`)
 
@@ -114,11 +154,18 @@ The `runpod/comfyui` image (`runpod-workers/comfyui-base` source) starts, in ord
 3. Custom ComfyUI args file: `/workspace/runpod-slim/comfyui_args.txt` (one flag per line, auto-applied)
 4. **ComfyUI** — port `3000`; if ComfyUI crashes, the pod stays alive so SSH/Jupyter/FileBrowser remain reachable for debugging
 
+ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128`), not the system Python. `setup.sh` detects it and routes every `pip install` through `$PY -m pip`, so packages land where ComfyUI can import them. If you install anything by hand over SSH, use the same interpreter:
+
+```bash
+/workspace/runpod-slim/ComfyUI/.venv-cu128/bin/python -m pip install <package>
+```
+
 Access everything via the pod's **Connect** menu in the RunPod console.
 
 ## References
 
 - ComfyUI docs: https://docs.comfy.org/tutorials/video/ltx/ltx-2-5
+- Official LTX-2.3 image+audio→video template (the technique ported here): https://comfy.org/workflows/video_ltx2_3_ia2v-adca306765ce/
 - Official weights: https://huggingface.co/Lightricks/LTX-2.5
 - Node pack: https://github.com/Lightricks/ComfyUI-LTXVideo
 - Low-VRAM alternative (manual): GGUF quants `Abiray/LTX-2.5-Distilled-GGUF` + `city96/ComfyUI-GGUF` custom node
