@@ -8,7 +8,8 @@ echo "=== Starting LTX-2.5 Template Setup ==="
 # -------------------------------------------------------------------
 # Configuration (all overridable via RunPod template environment vars)
 # -------------------------------------------------------------------
-COMFYUI_PATH="/workspace/runpod-slim/ComfyUI"
+# Where ComfyUI lives. Overridable as a template env var if your image differs.
+COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
 
 # Update ComfyUI core + UI packages so the native LTX-2.5 nodes and the
 # built-in LTX-2.5 T2V / I2V / FLF2V workflow templates are available.
@@ -29,6 +30,11 @@ INSTALL_LTXVIDEO_NODES="${INSTALL_LTXVIDEO_NODES:-0}"
 # If no token is set, or the gated download fails, the script automatically
 # falls back to an ungated mirror of the exact same files (lxxxy6/LTX-2.5).
 HF_TOKEN="${HF_TOKEN:-}"
+# huggingface_hub reads HF_TOKEN from the environment; export it so the fast
+# downloader authenticates too (wget passes it as a header separately).
+[ -n "$HF_TOKEN" ] && export HF_TOKEN
+# Keep any HF cache on the volume, never on the 5GB container disk.
+export HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 OFFICIAL_REPO="Lightricks/LTX-2.5"
 MIRROR_REPO="lxxxy6/LTX-2.5"
 # Official ungated source for the prompt-enhancer encoder (Comfy-Org/gemma-4);
@@ -64,8 +70,25 @@ fetch_hf() {
   fi
 }
 
+hf_fast() {
+  # $1 = destination file, $2 = repo id, $3 = path inside the repo
+  # hf_transfer opens many parallel connections - typically several times faster than
+  # wget's single stream on a 21GB file. It cannot resume, so wget remains the fallback.
+  local dest="$1" repo="$2" rpath="$3"
+  [ -n "$HF_BIN" ] && [ -x "$HF_BIN" ] || return 1
+  local tmp
+  tmp="$(mktemp -d "$(dirname "$dest")/.hfdl.XXXXXX")" || return 1
+  HF_HUB_ENABLE_HF_TRANSFER=1 "$HF_BIN" download "$repo" "$rpath" --local-dir "$tmp" || true
+  if file_ok "$tmp/$rpath"; then
+    mv -f "$tmp/$rpath" "$dest"
+  fi
+  rm -rf "$tmp"
+  file_ok "$dest"
+}
+
 download_ltx_model() {
   # $1 = destination file, $2 = official repo subpath, $3 = bare filename
+  # Four attempts, fastest first: hf official -> hf mirror -> wget official -> wget mirror.
   local dest="$1" sub="$2" fname="$3"
   if [ -f "$dest" ]; then
     echo "$fname already exists, skipping."
@@ -73,9 +96,14 @@ download_ltx_model() {
   fi
   echo "Downloading $fname ..."
   mkdir -p "$(dirname "$dest")"
+
+  hf_fast "$dest" "$OFFICIAL_REPO" "$sub" && { echo "$fname done ($(du -h "$dest" | cut -f1))."; return 0; }
+  echo "  official via hf failed (gated without HF_TOKEN?), trying mirror..."
+  hf_fast "$dest" "$MIRROR_REPO" "$fname" && { echo "$fname done ($(du -h "$dest" | cut -f1))."; return 0; }
+
+  echo "  fast downloader unavailable or failed, falling back to wget (resumable)..."
   fetch_hf "$dest" "$OFFICIAL_REPO" "$sub"
   if ! file_ok "$dest"; then
-    echo "Gated download failed for $fname (missing HF_TOKEN?), trying ungated mirror..."
     fetch_hf "$dest" "$MIRROR_REPO" "$fname"
   fi
   if ! file_ok "$dest"; then
@@ -91,15 +119,46 @@ download_ltx_model() {
 # -------------------------------------------------------------------
 # Define the correct ComfyUI path for runpod/comfyui:cuda12.8
 
-# If ComfyUI is not yet in the workspace (or missing main.py), copy the pre-built files first
-# This self-healing check prevents directory collisions and fixes broken folders
+# If the workspace copy is missing, seed it from whatever ComfyUI the image ships.
+# RunPod ComfyUI images do not all use the same layout, so probe rather than assume
+# /opt/comfyui-baked exists: installing into a directory ComfyUI never reads fails
+# silently and looks exactly like "the script never ran".
 if [ ! -f "$COMFYUI_PATH/main.py" ]; then
-  echo "First time setup: Copying baked ComfyUI to workspace..."
-  # Clean up any broken, empty directory from previous failed setups first
-  rm -rf "$COMFYUI_PATH"
-  mkdir -p /workspace/runpod-slim
-  cp -r /opt/comfyui-baked "$COMFYUI_PATH"
+  BAKED=""
+  for cand in /opt/comfyui-baked /opt/ComfyUI /comfyui /ComfyUI /workspace/ComfyUI; do
+    if [ -f "$cand/main.py" ]; then BAKED="$cand"; break; fi
+  done
+  if [ -z "$BAKED" ]; then
+    echo "ComfyUI not in a known location, searching the filesystem..."
+    FOUND="$(find / -maxdepth 5 -name main.py -path '*omfy*' \
+      -not -path '*/custom_nodes/*' 2>/dev/null | head -1)"
+    [ -n "$FOUND" ] && BAKED="$(dirname "$FOUND")"
+  fi
+
+  if [ -z "$BAKED" ] || [ ! -f "$BAKED/main.py" ]; then
+    echo "FATAL: could not find a ComfyUI install (no main.py anywhere expected)."
+    echo "       Check the container image, or set COMFYUI_PATH as a template env var."
+    exit 1
+  fi
+
+  if [ "$BAKED" = "/opt/comfyui-baked" ]; then
+    echo "First time setup: copying baked ComfyUI to $COMFYUI_PATH ..."
+    rm -rf "$COMFYUI_PATH"
+    mkdir -p "$(dirname "$COMFYUI_PATH")"
+    cp -r "$BAKED" "$COMFYUI_PATH" || { echo "FATAL: copy failed."; exit 1; }
+  else
+    # Image keeps ComfyUI somewhere else: install into it directly rather than
+    # copying, so models and workflows land where ComfyUI will actually read them.
+    echo "Using the image's existing ComfyUI at $BAKED"
+    COMFYUI_PATH="$BAKED"
+  fi
 fi
+
+if [ ! -f "$COMFYUI_PATH/main.py" ]; then
+  echo "FATAL: $COMFYUI_PATH/main.py missing after setup - aborting."
+  exit 1
+fi
+echo "ComfyUI path: $COMFYUI_PATH"
 
 # Use the interpreter ComfyUI actually runs from. The runpod/comfyui:cuda12.8 image
 # keeps ComfyUI in its own venv, so a bare `pip install` puts packages in the system
@@ -109,6 +168,21 @@ PY="$COMFYUI_PATH/.venv-cu128/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
 PIP="$PY -m pip"
 echo "Using python: $PY"
+
+# Fast multi-threaded downloader for the ~47GB of weights. Falls back to wget if the
+# install or the CLI lookup fails, so this is an optimisation, never a hard dependency.
+echo "Installing fast downloader (huggingface_hub + hf_transfer)..."
+$PIP install -q -U "huggingface_hub[hf_transfer]" || \
+  echo "WARN: could not install hf_transfer; downloads will use wget instead."
+HF_BIN="$(dirname "$PY")/hf"
+[ -x "$HF_BIN" ] || HF_BIN="$(dirname "$PY")/huggingface-cli"
+[ -x "$HF_BIN" ] || HF_BIN="$(command -v hf || command -v huggingface-cli || true)"
+if [ -n "$HF_BIN" ] && [ -x "$HF_BIN" ]; then
+  echo "Fast downloader: $HF_BIN"
+else
+  HF_BIN=""
+  echo "Fast downloader unavailable, using wget."
+fi
 
 # 0. Update ComfyUI core so LTX-2.5 native nodes + workflow templates exist
 if [ "$UPDATE_COMFYUI" = "1" ]; then
@@ -242,9 +316,13 @@ if [ "$DOWNLOAD_PROMPT_ENHANCER" = "1" ]; then
     echo "gemma4_e2b_it_int8_convrot.safetensors already exists, skipping."
   else
     echo "Downloading prompt enhancer text encoder (gemma4_e2b_it_int8_convrot)..."
-    fetch_hf "$PE_DEST" "$ENHANCER_REPO" "text_encoders/gemma4_e2b_it_int8_convrot.safetensors"
+    hf_fast "$PE_DEST" "$ENHANCER_REPO" "text_encoders/gemma4_e2b_it_int8_convrot.safetensors" || \
+    hf_fast "$PE_DEST" "$ENHANCER_REPO_FALLBACK" "gemma4_e2b_it_int8_convrot.safetensors" || true
     if ! file_ok "$PE_DEST"; then
-      echo "Official source failed, trying fallback mirror..."
+      echo "Fast downloader failed, falling back to wget..."
+      fetch_hf "$PE_DEST" "$ENHANCER_REPO" "text_encoders/gemma4_e2b_it_int8_convrot.safetensors"
+    fi
+    if ! file_ok "$PE_DEST"; then
       fetch_hf "$PE_DEST" "$ENHANCER_REPO_FALLBACK" "gemma4_e2b_it_int8_convrot.safetensors"
     fi
     if file_ok "$PE_DEST"; then

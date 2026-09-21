@@ -38,7 +38,16 @@ Core set ≈ **39 GB**; with both optional files ≈ **47 GB**. Use a **64 GB vo
 | Ports | HTTP `3000` (ComfyUI), HTTP `8888` (JupyterLab, boots automatically), HTTP `8080` (FileBrowser) |
 | Env vars | `HF_TOKEN` (recommended), `JUPYTER_PASSWORD`, `FILEBROWSER_PASSWORD` (see below) |
 
-**Docker command** (host `setup.sh` in a GitHub repo, e.g. the same repo you used for the Z-Image template):
+**Container start command.** RunPod's DNS is occasionally not ready when the container starts, so the command pins public resolvers, waits, and retries the clone rather than dying on the first failure:
+
+```json
+{
+  "entrypoint": ["bash", "-c"],
+  "cmd": ["echo 'nameserver 8.8.8.8' > /etc/resolv.conf && echo 'nameserver 1.1.1.1' >> /etc/resolv.conf && sleep 10 && rm -rf /tmp/temp_repo && for i in {1..10}; do git clone --depth 1 https://github.com/tenitsky/ltx-2.5-template-files.git /tmp/temp_repo && break || sleep 5; done && chmod +x /tmp/temp_repo/setup.sh && /tmp/temp_repo/setup.sh"]
+}
+```
+
+Minimal equivalent, if your networking is reliable:
 
 ```bash
 bash -c "git clone --depth 1 https://github.com/tenitsky/ltx-2.5-template-files /tmp/temp_repo && bash /tmp/temp_repo/setup.sh"
@@ -59,7 +68,8 @@ Without `HF_TOKEN` the script still works — it automatically falls back to an 
 - Open ComfyUI (port 3000) → **Workflow → Browse Templates** → search **"LTX-2.5"** for the three native workflows: **Text to Video (T2V)**, **Image to Video (I2V)**, **FLF2V** (first/last frame).
 - Or open the **Workflows** sidebar for the two bundled lipsync workflows — `lipsync_audio_ia2v_workflow` (photo + your audio file) and `lipsync_i2v_workflow` (photo + written script). See the sections below.
 - First boot downloads ~40–47 GB from HF; later boots skip everything and start in seconds (files persist on the network volume).
-- Re-runs are safe: every step is skip-if-present and downloads resume (`wget -c`).
+- Downloads use **`hf_transfer`** (multi-threaded, typically several times faster than a single `wget` stream). Each file tries, in order: official repo → mirror via `hf`, then official → mirror via `wget`. The `wget` stage resumes partial files, so a dropped connection is never fatal.
+- Re-runs are safe: every step is skip-if-present.
 
 ## Repository layout
 
@@ -144,6 +154,8 @@ LoadImage → LTXVPreprocess → LTXVImgToVideoInplace ──┘
 | `DOWNLOAD_PROMPT_ENHANCER` | `1` | `0` = skip 8.1 GB prompt-enhancer encoder. Leave at `1`: both bundled workflows contain a `CLIPLoader` pointing at that file, and ComfyUI validates it even when the enhancer is switched off |
 | `DOWNLOAD_TEMPORAL_UPSCALER` | `1` | `0` = skip temporal upscaler |
 | `INSTALL_LTXVIDEO_NODES` | `0` | `1` = also clone the Lightricks `ComfyUI-LTXVideo` pack. Not needed by anything bundled here |
+| `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Override only if your image uses a different layout. The script auto-detects ComfyUI and aborts loudly if it can't find it |
+| `HF_HOME` | `/workspace/.cache/huggingface` | HF cache location — kept on the volume, never the 5 GB container disk |
 
 ## What boots in the container (from the image's `start.sh`)
 
