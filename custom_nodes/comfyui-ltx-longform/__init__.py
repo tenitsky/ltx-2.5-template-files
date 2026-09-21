@@ -126,6 +126,27 @@ def plan_chunks(total, target, min_len, max_len, pauses):
     return spans
 
 
+def _session_from_prompt(prompt, default="run1"):
+    """Read the session name off the Write node.
+
+    Start Frame runs before Write, so it cannot take the value as a link without
+    creating a cycle. Reading it out of the prompt keeps the name on exactly one
+    node instead of requiring two widgets to be kept in sync by hand.
+    """
+    if isinstance(prompt, dict):
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            if node.get("class_type") != "LTXLongformWrite":
+                continue
+            v = (node.get("inputs") or {}).get("session")
+            # A converted-to-input widget shows up as [node_id, slot]; only a
+            # literal string is usable here.
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return default
+
+
 def _ffmpeg():
     exe = shutil.which("ffmpeg")
     if not exe:
@@ -150,6 +171,10 @@ class LTXLongformSplit:
                 "target_seconds": ("INT", {"default": 8, "min": 2, "max": 20}),
                 "min_seconds": ("INT", {"default": 5, "min": 1, "max": 20}),
                 "max_seconds": ("INT", {"default": 10, "min": 2, "max": 20}),
+            },
+            # Optional, not required: a new required input invalidates every
+            # workflow saved before it existed.
+            "optional": {
                 "cut_mode": (["silence", "fixed"], {
                     "default": "silence",
                     "tooltip": "silence: cut inside pauses so chunks do not break "
@@ -208,10 +233,11 @@ class LTXLongformStartFrame:
             "required": {
                 "portrait": ("IMAGE",),
                 "chunk_index": ("INT", {"default": 0, "min": 0, "max": 100000}),
-                "session": ("STRING", {"default": "run1"}),
                 "reanchor_every": ("INT", {"default": 6, "min": 0, "max": 1000,
                                            "tooltip": "0 = never re-anchor."}),
-            }
+            },
+            # Session name is taken from the Write node so it is set in one place.
+            "hidden": {"prompt": "PROMPT"},
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -220,13 +246,16 @@ class LTXLongformStartFrame:
     CATEGORY = "LTX Longform"
 
     @classmethod
-    def IS_CHANGED(cls, chunk_index, session, **kw):
-        # The file on disk changes between queue items while the inputs may not, so
-        # report the previous chunk's frame as part of the cache key.
+    def IS_CHANGED(cls, chunk_index, reanchor_every, prompt=None, **kw):
+        # The file on disk changes between queue items while the widget values do
+        # not, so the previous chunk's frame has to be part of the cache key or
+        # ComfyUI would serve chunk N-1's result again.
+        session = _session_from_prompt(prompt)
         p = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}.npy")
-        return f"{chunk_index}:{os.path.getmtime(p) if os.path.exists(p) else 0}"
+        return f"{session}:{chunk_index}:{os.path.getmtime(p) if os.path.exists(p) else 0}"
 
-    def pick(self, portrait, chunk_index, session, reanchor_every):
+    def pick(self, portrait, chunk_index, reanchor_every, prompt=None):
+        session = _session_from_prompt(prompt)
         if chunk_index == 0:
             print("[LTX Longform] chunk 0: starting from the portrait")
             return (portrait,)
@@ -237,8 +266,8 @@ class LTXLongformStartFrame:
         prev = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}.npy")
         if not os.path.exists(prev):
             print(f"[LTX Longform] WARNING: no last frame from chunk "
-                  f"{chunk_index - 1}; falling back to the portrait. "
-                  f"(Queue chunks in order, and keep the session name the same.)")
+                  f"{chunk_index - 1} in session '{session}'; falling back to the "
+                  f"portrait. (Queue chunks in order.)")
             return (portrait,)
         arr = np.load(prev)
         return (torch.from_numpy(arr).unsqueeze(0),)
@@ -262,7 +291,12 @@ class LTXLongformWrite:
                 "total_chunks": ("INT", {"default": 1, "min": 1, "max": 100000}),
                 "duration": ("INT", {"default": 8, "min": 1, "max": 60}),
                 "fps": ("INT", {"default": FPS_DEFAULT, "min": 1, "max": 120}),
-                "session": ("STRING", {"default": "run1"}),
+                "session": ("STRING", {"default": "run1",
+                                       "tooltip": "Folder for this render under "
+                                                  "output/ltx_longform/. Set it here "
+                                                  "only - Start Frame picks it up "
+                                                  "automatically. Change it to start "
+                                                  "a fresh render."}),
                 "filename": ("STRING", {"default": "longform_final.mp4"}),
             },
             "optional": {

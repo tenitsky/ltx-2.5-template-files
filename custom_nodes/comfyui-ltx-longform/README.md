@@ -25,8 +25,10 @@ Start from `lipsync_audio_ia2v_workflow`, then:
    use a primitive set to increment).
 3. Queue with **batch count = total_chunks**.
 
-Chunks must run in order and share one `session` name. The final chunk stitches
-everything and writes `filename` to the output folder.
+Chunks must run in order. The **`session`** name is set on the Write node only - Start
+Frame reads it from there automatically, so there is nothing to keep in sync. Change it
+to start a fresh render. The final chunk stitches everything and writes `filename` to
+the output folder.
 
 ## What it handles
 
@@ -46,6 +48,12 @@ everything and writes `filename` to the output folder.
   whole-second duration works, at 25/30/50 most durations round down and drift.
 - Describe only motion and delivery in the prompt. Restating hair or clothing makes the
   model reconcile the text against the image and accelerates drift.
-- If a chunk fails, re-queue that index with the same session, then run the last chunk
-  again. Stitching refuses to run with gaps rather than silently shifting the timeline.
+- If a chunk fails, re-queue that index, then run the last chunk again. Stitching
+  refuses to run with gaps rather than silently shifting the timeline.
+- Per-chunk files are muxed with the audio they were conditioned on, so you can check a
+  single chunk for sync on its own - the fastest way to tell a generation problem from
+  an assembly one.
+- `cut_mode` on the Split node: `silence` cuts inside pauses (avoids breaking mid-word);
+  `fixed` cuts on a grid, keeping pauses mid-chunk. Try `fixed` if speech starts early
+  after a pause. The console prints how many pauses were detected.
 - Intermediates live in `output/ltx_longform/<session>/`.
