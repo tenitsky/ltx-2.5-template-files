@@ -20,10 +20,17 @@ Start from `lipsync_audio_ia2v_workflow`, then:
 
 ## Running
 
-1. Queue once with `chunk_index = 0` and read `total_chunks` from the console.
-2. Set `chunk_index` to **increment** (right-click the widget -> convert to input, or
-   use a primitive set to increment).
-3. Queue with **batch count = total_chunks**.
+1. Set `chunk_index` to **0** and leave it on **increment**.
+2. Queue with a batch count **at least** as large as the number of chunks. You do not
+   need to know the exact number: once the render is complete, surplus queue items are
+   blocked and finish in milliseconds instead of generating anything. Estimate high -
+   `audio_seconds / target_seconds` rounded up, plus some margin - or just use
+   **Run (Instant)**.
+3. The final chunk stitches everything and, with `stop_when_done` on, clears the
+   pending queue so the run ends by itself.
+
+To start a **fresh** render: set `chunk_index` back to 0 and change `session` on the
+Write node. Reusing a session would mix the old chunks into the new stitch.
 
 Chunks must run in order. The **`session`** name is set on the Write node only - Start
 Frame reads it from there automatically, so there is nothing to keep in sync. Change it

@@ -37,6 +37,16 @@ import torch
 
 import folder_paths
 
+try:
+    # Returning this from a node blocks everything downstream, so an
+    # out-of-range chunk finishes in milliseconds instead of sampling.
+    from comfy_execution.graph_utils import ExecutionBlocker
+except ImportError:  # pragma: no cover - older ComfyUI
+    try:
+        from comfy_execution.graph import ExecutionBlocker
+    except ImportError:
+        ExecutionBlocker = None
+
 FPS_DEFAULT = 24
 
 
@@ -207,6 +217,18 @@ class LTXLongformSplit:
         if not spans:
             raise RuntimeError("Audio too short to split into chunks.")
 
+        if chunk_index >= len(spans):
+            # Past the end. Blocking here is what makes it safe to queue a
+            # generous batch count without knowing the total in advance: the
+            # surplus items cost milliseconds each instead of a full render.
+            if ExecutionBlocker is not None:
+                if chunk_index == len(spans):
+                    print(f"[LTX Longform] all {len(spans)} chunks done - "
+                          f"skipping surplus queue items.")
+                return tuple(ExecutionBlocker(None) for _ in range(4))
+            # No blocker available: fall back to repeating the last chunk.
+            print("[LTX Longform] past the last chunk; stop the queue manually.")
+
         idx = min(chunk_index, len(spans) - 1)
         start, dur = spans[idx]
         a = int(round(start * sr))
@@ -305,6 +327,12 @@ class LTXLongformWrite:
                 # here so a single chunk can be checked for sync on its own.
                 "chunk_audio": ("AUDIO", {"tooltip": "Connect Split's audio_chunk "
                                                      "to make chunks playable."}),
+                "stop_when_done": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "After the final chunk, clear the pending queue so a "
+                               "generous batch count (or Run Instant) stops by "
+                               "itself. This clears ALL pending items, including "
+                               "unrelated jobs."}),
             }
         }
 
@@ -315,7 +343,8 @@ class LTXLongformWrite:
     CATEGORY = "LTX Longform"
 
     def write(self, images, original_audio, chunk_index, total_chunks,
-              duration, fps, session, filename, chunk_audio=None):
+              duration, fps, session, filename, chunk_audio=None,
+              stop_when_done=True):
         ff = _ffmpeg()
         sdir = _session_dir(session)
 
@@ -391,6 +420,18 @@ class LTXLongformWrite:
 
         msg = f"FINISHED: {out}"
         print(f"[LTX Longform] {msg}")
+
+        if stop_when_done:
+            # Surplus items would be blocked by Split anyway, but clearing them
+            # is tidier and makes Run (Instant) terminate instead of spinning.
+            try:
+                from server import PromptServer
+                PromptServer.instance.prompt_queue.wipe_queue()
+                print("[LTX Longform] pending queue cleared.")
+            except Exception as e:
+                print(f"[LTX Longform] could not clear the queue ({e}); "
+                      f"surplus items will be skipped instead.")
+
         return (msg,)
 
     @staticmethod

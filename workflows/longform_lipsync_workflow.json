@@ -735,6 +735,15 @@
           "name": "chunk_audio",
           "type": "AUDIO",
           "link": 806
+        },
+        {
+          "localized_name": "stop_when_done",
+          "name": "stop_when_done",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "stop_when_done"
+          }
         }
       ],
       "outputs": [
@@ -768,7 +777,8 @@
         8,
         24,
         "run1",
-        "longform_final.mp4"
+        "longform_final.mp4",
+        true
       ],
       "title": "3. Write + Stitch (auto-assembles on the last chunk)"
     }
