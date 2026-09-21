@@ -28,6 +28,18 @@ MIRROR_REPO="lxxxy6/LTX-2.5"
 DOWNLOAD_PROMPT_ENHANCER="${DOWNLOAD_PROMPT_ENHANCER:-1}"
 DOWNLOAD_TEMPORAL_UPSCALER="${DOWNLOAD_TEMPORAL_UPSCALER:-1}"
 
+# Long-form lipsync driver (scripts/longform_lipsync.py) is always copied to
+# /workspace/scripts. Set AUTORUN_LONGFORM=1 to also start a render on boot - it
+# needs an API-format workflow, which only exists once you have opened ComfyUI and
+# used Workflow -> Export (API), so this can never fire on a first boot.
+AUTORUN_LONGFORM="${AUTORUN_LONGFORM:-0}"
+LONGFORM_API_WORKFLOW="${LONGFORM_API_WORKFLOW:-/workspace/longform/lipsync_api.json}"
+LONGFORM_IMAGE="${LONGFORM_IMAGE:-/workspace/longform/portrait.png}"
+LONGFORM_AUDIO="${LONGFORM_AUDIO:-/workspace/longform/voiceover.mp3}"
+LONGFORM_OUT="${LONGFORM_OUT:-/workspace/longform/final.mp4}"
+LONGFORM_CHUNK="${LONGFORM_CHUNK:-8}"
+LONGFORM_REANCHOR="${LONGFORM_REANCHOR:-6}"
+
 # Self-healing check prevents directory collisions and fixes broken folders
 if [ ! -f "$COMFYUI_PATH/main.py" ]; then
   echo "First time setup: Copying baked ComfyUI to workspace..."
@@ -209,10 +221,46 @@ else
   echo "No workflows directory found in repo, skipping."
 fi
 
-# 6. Clean up the temporary git folder
+# 6. Install the long-form lipsync driver onto the volume
+echo "Installing scripts..."
+mkdir -p /workspace/scripts /workspace/longform
+if [ -d /tmp/temp_repo/scripts ]; then
+  cp -f /tmp/temp_repo/scripts/*.py /workspace/scripts/ 2>/dev/null
+  chmod +x /workspace/scripts/*.py 2>/dev/null
+  ls /workspace/scripts | sed 's/^/  script: /'
+fi
+# requests drives the ComfyUI API; ffmpeg does the splitting and stitching.
+python -c "import requests" 2>/dev/null || pip install -q requests 2>/dev/null
+command -v ffmpeg >/dev/null || apt-get install -y ffmpeg
+
+# 6.5 Optional: kick off a long-form render once ComfyUI is serving.
+# setup.sh ends in `exec /start.sh`, which replaces this process, so anything that
+# has to run *after* ComfyUI is up must be backgrounded here first.
+if [ "$AUTORUN_LONGFORM" = "1" ]; then
+  if [ -f "$LONGFORM_API_WORKFLOW" ] && [ -f "$LONGFORM_IMAGE" ] && [ -f "$LONGFORM_AUDIO" ]; then
+    echo "AUTORUN_LONGFORM=1: render will start once ComfyUI is up."
+    echo "  log: /workspace/longform/run.log"
+    nohup bash -c '
+      for _ in $(seq 1 180); do
+        curl -sf http://127.0.0.1:8188/system_stats >/dev/null 2>&1 && break
+        sleep 5
+      done
+      echo "=== longform run started $(date) ==="
+      python /workspace/scripts/longform_lipsync.py         --api-workflow "'"$LONGFORM_API_WORKFLOW"'"         --image "'"$LONGFORM_IMAGE"'"         --audio "'"$LONGFORM_AUDIO"'"         --out "'"$LONGFORM_OUT"'"         --comfy http://127.0.0.1:8188         --comfy-input "'"$COMFYUI_PATH"'/input"         --work /workspace/longform/work         --chunk "'"$LONGFORM_CHUNK"'"         --reanchor-every "'"$LONGFORM_REANCHOR"'"         --resume
+      echo "=== longform run finished $(date) ==="
+    ' >> /workspace/longform/run.log 2>&1 &
+  else
+    echo "AUTORUN_LONGFORM=1 but inputs are missing - skipping. Expected:"
+    echo "  workflow: $LONGFORM_API_WORKFLOW  (ComfyUI -> Workflow -> Export (API))"
+    echo "  image:    $LONGFORM_IMAGE"
+    echo "  audio:    $LONGFORM_AUDIO"
+  fi
+fi
+
+# 7. Clean up the temporary git folder
 echo "Cleaning up temp files..."
 rm -rf /tmp/temp_repo
 
-# 7. Start ComfyUI using the official RunPod entrypoint
+# 8. Start ComfyUI using the official RunPod entrypoint
 echo "Setup complete! Handing over to start script..."
 exec /start.sh
