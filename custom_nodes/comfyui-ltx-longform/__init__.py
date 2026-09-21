@@ -362,8 +362,12 @@ class LTXLongformWrite:
         chunk_mp4 = os.path.join(sdir, f"chunk_{chunk_index:04d}.mp4")
         cmd = [ff, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
+        # Frames go to ffmpeg on stdin, and stdin can only carry one stream, so the
+        # audio has to land on disk briefly. It is deleted once muxed - the mp4
+        # carries the audio from then on.
+        chunk_wav = None
         if chunk_audio is not None:
-            chunk_wav = os.path.join(sdir, f"chunk_{chunk_index:04d}.wav")
+            chunk_wav = os.path.join(sdir, f".chunk_{chunk_index:04d}.wav")
             self._write_wav(chunk_audio, chunk_wav, ff)
             cmd += ["-i", chunk_wav, "-map", "0:v:0", "-map", "1:a:0",
                     "-c:a", "aac", "-b:a", "192k", "-shortest"]
@@ -371,10 +375,15 @@ class LTXLongformWrite:
             cmd += ["-an"]
         cmd += ["-c:v", "libx264", "-crf", "16", "-preset", "medium",
                 "-pix_fmt", "yuv420p", chunk_mp4]
-        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        _, err = p.communicate(arr.tobytes())
-        if p.returncode != 0:
-            raise RuntimeError(f"ffmpeg failed writing chunk:\n{err.decode()[-1500:]}")
+        try:
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            _, err = p.communicate(arr.tobytes())
+            if p.returncode != 0:
+                raise RuntimeError(
+                    f"ffmpeg failed writing chunk:\n{err.decode()[-1500:]}")
+        finally:
+            if chunk_wav and os.path.exists(chunk_wav):
+                os.remove(chunk_wav)
 
         # Hand the last frame to the next queue item.
         np.save(os.path.join(sdir, f"last_{chunk_index:04d}.npy"),
@@ -410,13 +419,21 @@ class LTXLongformWrite:
 
         # Mux the untouched original track. Each chunk's generated audio is a VAE
         # reconstruction of what we fed in, so the source is strictly better.
-        wav_path = os.path.join(sdir, "original.wav")
+        wav_path = os.path.join(sdir, ".original.wav")
         self._write_wav(original_audio, wav_path, ff)
 
         out = os.path.join(folder_paths.get_output_directory(), filename)
-        subprocess.run([ff, "-y", "-v", "error", "-i", silent, "-i", wav_path,
-                        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-                        "-c:a", "aac", "-b:a", "192k", "-shortest", out], check=True)
+        try:
+            subprocess.run([ff, "-y", "-v", "error", "-i", silent, "-i", wav_path,
+                            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                            "-c:a", "aac", "-b:a", "192k", "-shortest", out],
+                           check=True)
+        finally:
+            # A 7-minute track as uncompressed WAV is ~74MB; it has served its
+            # purpose the moment the mux completes.
+            for tmp in (wav_path, silent):
+                if os.path.exists(tmp):
+                    os.remove(tmp)
 
         msg = f"FINISHED: {out}"
         print(f"[LTX Longform] {msg}")
