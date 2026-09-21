@@ -31,12 +31,18 @@ Core set ≈ **39 GB**; with both optional files ≈ **47 GB**. Use a **64 GB vo
 
 | Setting | Value |
 |---|---|
-| Base image | `runpod/comfyui:cuda12.8` |
+| Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` **(not `cuda12.8`)** |
 | Container disk | 5 GB |
 | Volume mount | `/workspace` |
 | Volume size | 64–80 GB |
 | Ports | HTTP `8188` (ComfyUI), HTTP `8888` (JupyterLab). `8080` (FileBrowser) is optional — it starts regardless, expose it only if you want the web file manager |
 | Env vars | `HF_TOKEN` (recommended), `JUPYTER_PASSWORD`, `FILEBROWSER_PASSWORD` (see below) |
+
+> **Pick the image tag carefully.** `runpod/comfyui:cuda12.8` ships ComfyUI **v0.30.0**, which does not have `LTXVDualCFGGuider` — a node both bundled workflows need. They will fail to load on it.
+>
+> Use a tag with ComfyUI **v0.35.0** or newer, e.g. `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8`.
+>
+> `setup.sh` deliberately does **not** update ComfyUI core. On these images `pip install -r ComfyUI/requirements.txt` can reinstall `torch` (it is unpinned there) and break the baked CUDA build, leaving ComfyUI unable to start. Getting a new enough ComfyUI from the image is the safe route.
 
 **Container start command.** RunPod's DNS is occasionally not ready when the container starts, so the command pins public resolvers, waits, and retries the clone rather than dying on the first failure:
 
