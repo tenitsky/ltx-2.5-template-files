@@ -67,7 +67,7 @@ The official weights repo [`Lightricks/LTX-2.5`](https://huggingface.co/Lightric
 2. Create a **read** token: https://huggingface.co/settings/tokens
 3. Add it to the RunPod template as env var `HF_TOKEN`.
 
-Without `HF_TOKEN` the script still works — it automatically falls back to an ungated mirror of the same files (`lxxxy6/LTX-2.5`). Recommend using the token so downloads come from the official source.
+Without `HF_TOKEN` the script still works — it falls back to an ungated mirror of the same files (`lxxxy6/LTX-2.5`) — but **set the token anyway**. Anonymous Hub requests are rate-limited (~120/h vs ~1000/h) and get lower throughput, so an anonymous ~47 GB pull can be throttled part-way through. `huggingface_hub` says as much on every unauthenticated run: *"Please set a HF_TOKEN to enable higher rate limits and faster downloads."*
 
 ## After it boots
 

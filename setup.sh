@@ -14,11 +14,13 @@ COMFYUI_PATH="/workspace/runpod-slim/ComfyUI"
 # can reinstall torch (it is unpinned there) and break the baked CUDA build.
 #   Recommended image: runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8
 
-# The official weights repo (Lightricks/LTX-2.5) is license-gated. Set HF_TOKEN to a
-# read token from an account that accepted the licence. Without it the script falls
-# back to an ungated mirror of the same files.
+# Set HF_TOKEN to a read token from an account that has accepted the LTX-2.x licence.
+# It does two things: it reaches the gated official repo (without it the script falls
+# back to an ungated mirror of the same files), and it lifts the anonymous rate limit
+# (~120 req/h vs ~1000) and download throughput - an anonymous 47GB pull can get
+# throttled part-way through.
 HF_TOKEN="${HF_TOKEN:-}"
-[ -n "$HF_TOKEN" ] && export HF_TOKEN
+[ -n "$HF_TOKEN" ] && export HF_TOKEN || echo "NOTE: HF_TOKEN not set - downloads will be slower and rate-limited."
 export HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 OFFICIAL_REPO="Lightricks/LTX-2.5"
 MIRROR_REPO="lxxxy6/LTX-2.5"
@@ -65,12 +67,15 @@ mkdir -p "$COMFYUI_PATH/models/model_patches"
 # -------------------------------------------------------------------
 # Download helpers
 # -------------------------------------------------------------------
-# hf_transfer is a standalone CLI used only to fetch files, so installing it with the
-# system pip is fine - nothing in ComfyUI has to import it. It is multi-threaded and
-# much faster than wget on 20GB files, but it cannot resume, so wget stays as the
-# fallback for flaky connections.
+# `hf` is a standalone CLI used only to fetch files, so installing it with the system
+# pip is fine - nothing in ComfyUI has to import it. Its Xet backend chunks and
+# parallelises transfers, which is much faster than wget on 20GB files, but it does not
+# resume a partial file, so wget stays as the fallback for flaky connections.
 echo "Installing fast downloader (optional)..."
-pip install -q -U "huggingface_hub[hf_transfer]" 2>/dev/null
+# huggingface_hub 1.x replaced hf_transfer with the Xet backend; the [hf-xet] extra and
+# HF_XET_HIGH_PERFORMANCE are the current names. The old [hf_transfer] extra no longer
+# exists and HF_HUB_ENABLE_HF_TRANSFER is only warned about, never honoured.
+pip install -q -U "huggingface_hub[hf-xet]" 2>/dev/null || pip install -q -U huggingface_hub 2>/dev/null
 HF_BIN="$(command -v hf || command -v huggingface-cli || true)"
 [ -n "$HF_BIN" ] && echo "Fast downloader: $HF_BIN" || echo "Fast downloader unavailable, using wget."
 
@@ -84,7 +89,7 @@ hf_fast() {
   [ -n "$HF_BIN" ] || return 1
   # Stage beside the destination so the final move is a rename, not a 20GB copy.
   tmp="$(mktemp -d "$(dirname "$dest")/.hfdl.XXXXXX")" || return 1
-  HF_HUB_ENABLE_HF_TRANSFER=1 "$HF_BIN" download "$repo" "$rpath" --local-dir "$tmp" || true
+  HF_XET_HIGH_PERFORMANCE=1 "$HF_BIN" download "$repo" "$rpath" --local-dir "$tmp" || true
   file_ok "$tmp/$rpath" && mv -f "$tmp/$rpath" "$dest"
   rm -rf "$tmp"
   file_ok "$dest"
