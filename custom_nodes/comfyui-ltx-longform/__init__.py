@@ -150,6 +150,12 @@ class LTXLongformSplit:
                 "target_seconds": ("INT", {"default": 8, "min": 2, "max": 20}),
                 "min_seconds": ("INT", {"default": 5, "min": 1, "max": 20}),
                 "max_seconds": ("INT", {"default": 10, "min": 2, "max": 20}),
+                "cut_mode": (["silence", "fixed"], {
+                    "default": "silence",
+                    "tooltip": "silence: cut inside pauses so chunks do not break "
+                               "mid-word. fixed: cut on a strict grid, keeping pauses "
+                               "mid-chunk where the model renders them more reliably. "
+                               "Try fixed if speech starts early after a pause."}),
             }
         }
 
@@ -158,15 +164,21 @@ class LTXLongformSplit:
     FUNCTION = "split"
     CATEGORY = "LTX Longform"
 
-    def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds):
+    def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
+              cut_mode="silence"):
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         target_seconds = max(min_seconds, min(max_seconds, target_seconds))
 
         wav, sr = audio["waveform"], int(audio["sample_rate"])
         total = wav.shape[-1] / sr
-        spans = plan_chunks(total, target_seconds, min_seconds, max_seconds,
-                            _find_pauses(_mono(wav), sr))
+        pauses = _find_pauses(_mono(wav), sr) if cut_mode == "silence" else []
+        if chunk_index == 0:
+            # Worth surfacing: pause detection is thresholded against the track's
+            # peak, so music or room tone under the voice can leave it finding
+            # nothing, and cuts then fall back to a fixed grid anyway.
+            print(f"[LTX Longform] cut_mode={cut_mode}, pauses found: {len(pauses)}")
+        spans = plan_chunks(total, target_seconds, min_seconds, max_seconds, pauses)
         if not spans:
             raise RuntimeError("Audio too short to split into chunks.")
 
@@ -252,6 +264,13 @@ class LTXLongformWrite:
                 "fps": ("INT", {"default": FPS_DEFAULT, "min": 1, "max": 120}),
                 "session": ("STRING", {"default": "run1"}),
                 "filename": ("STRING", {"default": "longform_final.mp4"}),
+            },
+            "optional": {
+                # Muxed into the per-chunk file only. The finished render always
+                # uses the full original track, so this cannot affect it - it is
+                # here so a single chunk can be checked for sync on its own.
+                "chunk_audio": ("AUDIO", {"tooltip": "Connect Split's audio_chunk "
+                                                     "to make chunks playable."}),
             }
         }
 
@@ -262,7 +281,7 @@ class LTXLongformWrite:
     CATEGORY = "LTX Longform"
 
     def write(self, images, original_audio, chunk_index, total_chunks,
-              duration, fps, session, filename):
+              duration, fps, session, filename, chunk_audio=None):
         ff = _ffmpeg()
         sdir = _session_dir(session)
 
@@ -278,12 +297,18 @@ class LTXLongformWrite:
         n, h, w, _ = arr.shape
 
         chunk_mp4 = os.path.join(sdir, f"chunk_{chunk_index:04d}.mp4")
-        p = subprocess.Popen(
-            [ff, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-             "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-             "-an", "-c:v", "libx264", "-crf", "16", "-preset", "medium",
-             "-pix_fmt", "yuv420p", chunk_mp4],
-            stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        cmd = [ff, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+               "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
+        if chunk_audio is not None:
+            chunk_wav = os.path.join(sdir, f"chunk_{chunk_index:04d}.wav")
+            self._write_wav(chunk_audio, chunk_wav, ff)
+            cmd += ["-i", chunk_wav, "-map", "0:v:0", "-map", "1:a:0",
+                    "-c:a", "aac", "-b:a", "192k", "-shortest"]
+        else:
+            cmd += ["-an"]
+        cmd += ["-c:v", "libx264", "-crf", "16", "-preset", "medium",
+                "-pix_fmt", "yuv420p", chunk_mp4]
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = p.communicate(arr.tobytes())
         if p.returncode != 0:
             raise RuntimeError(f"ffmpeg failed writing chunk:\n{err.decode()[-1500:]}")
@@ -318,7 +343,7 @@ class LTXLongformWrite:
 
         silent = os.path.join(sdir, "video_only.mp4")
         subprocess.run([ff, "-y", "-v", "error", "-f", "concat", "-safe", "0",
-                        "-i", listfile, "-c", "copy", silent], check=True)
+                        "-i", listfile, "-c:v", "copy", "-an", silent], check=True)
 
         # Mux the untouched original track. Each chunk's generated audio is a VAE
         # reconstruction of what we fed in, so the source is strictly better.

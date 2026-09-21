@@ -2,7 +2,7 @@
   "id": "07824bbb-6672-4bb0-ac36-4313a519e35b",
   "revision": 0,
   "last_node_id": 414,
-  "last_link_id": 805,
+  "last_link_id": 806,
   "nodes": [
     {
       "id": 395,
@@ -505,6 +505,15 @@
           "widget": {
             "name": "max_seconds"
           }
+        },
+        {
+          "localized_name": "cut_mode",
+          "name": "cut_mode",
+          "type": "COMBO",
+          "link": null,
+          "widget": {
+            "name": "cut_mode"
+          }
         }
       ],
       "outputs": [
@@ -513,7 +522,8 @@
           "name": "audio_chunk",
           "type": "AUDIO",
           "links": [
-            800
+            800,
+            806
           ]
         },
         {
@@ -561,7 +571,8 @@
         0,
         8,
         5,
-        10
+        10,
+        "silence"
       ],
       "title": "1. Split Audio Chunk"
     },
@@ -728,6 +739,12 @@
           "widget": {
             "name": "filename"
           }
+        },
+        {
+          "localized_name": "chunk_audio",
+          "name": "chunk_audio",
+          "type": "AUDIO",
+          "link": 806
         }
       ],
       "outputs": [
@@ -878,6 +895,14 @@
       414,
       0,
       "IMAGE"
+    ],
+    [
+      806,
+      412,
+      0,
+      414,
+      8,
+      "AUDIO"
     ]
   ],
   "groups": [],
