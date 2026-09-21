@@ -10,7 +10,7 @@ On first pod boot it automatically:
 4. Downloads all LTX-2.5 model files into the correct `models/` folders (skip-if-exists, resumable)
 5. Hands over to `/start.sh` (ComfyUI on port **8188**)
 
-> **No custom nodes required.** Every bundled workflow runs on core ComfyUI nodes only. The Lightricks `ComfyUI-LTXVideo` pack is available but **off by default** (`INSTALL_LTXVIDEO_NODES=1` to enable) — its dependencies (`openimageio`, `diffusers`, a `transformers` bump) often fail to build and can disturb the baked environment.
+> **The two short-form workflows need no custom nodes** — they run on core ComfyUI nodes only. The long-form workflow uses the small `comfyui-ltx-longform` pack bundled in this repo (~350 lines, no dependencies beyond ffmpeg), which `setup.sh` installs automatically. The Lightricks `ComfyUI-LTXVideo` pack is available but **off by default** (`INSTALL_LTXVIDEO_NODES=1` to enable) — its dependencies (`openimageio`, `diffusers`, a `transformers` bump) often fail to build and can disturb the baked environment.
 
 ## Models pulled
 
@@ -82,10 +82,33 @@ Without `HF_TOKEN` the script still works — it falls back to an ungated mirror
 ```
 ├── setup.sh                             # RunPod boot script (Docker Command target)
 ├── README.md
+├── custom_nodes/
+│   └── comfyui-ltx-longform/            # 3 nodes for minutes-long renders (auto-installed)
+├── scripts/
+│   └── longform_lipsync.py              # same job, driven from the CLI instead
 └── workflows/                           # auto-installed into ComfyUI's Workflows menu on boot
     ├── lipsync_audio_ia2v_workflow.json # photo + YOUR audio file → lipsynced video
-    └── lipsync_i2v_workflow.json        # photo + written dialogue → talking video (voice generated)
+    ├── lipsync_i2v_workflow.json        # photo + written dialogue → talking video (voice generated)
+    └── longform_lipsync_workflow.json   # photo + LONG audio → minutes-long video, auto-stitched
 ```
+
+## Long-form (videos longer than ~10s)
+
+LTX-2.5 caps out around 10s per generation, so a 7-minute track is rendered as ~50
+chunks and stitched. Two ways, both installed automatically:
+
+**In ComfyUI** — open `longform_lipsync_workflow`, set Load Image + Load Audio, queue
+once with `chunk_index = 0` to learn `total_chunks`, then queue with that batch count.
+The last chunk assembles `longform_final.mp4` by itself. See
+`custom_nodes/comfyui-ltx-longform/README.md`.
+
+**From the CLI** — `/workspace/scripts/longform_lipsync.py` does the same thing with
+`--resume`, which is better for long unattended runs. Needs the workflow exported via
+**Workflow → Export (API)**.
+
+Both trim LTX's extra frame per chunk (otherwise ~2s of progressive audio slip over 7
+minutes), mux your original audio rather than 50 VAE reconstructions, and bias cuts
+toward pauses so chunks don't break mid-word. Budget 2–3 hours on a 48 GB card.
 
 **Which one do you want?**
 
