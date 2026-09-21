@@ -6,3 +6,8 @@ desktop.ini
 # Local experimentation
 __pycache__/
 *.pyc
+
+# Secrets - never commit
+*.env
+token.txt
+*_token*
