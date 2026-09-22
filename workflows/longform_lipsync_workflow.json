@@ -1,8 +1,8 @@
 {
   "id": "07824bbb-6672-4bb0-ac36-4313a519e35b",
   "revision": 0,
-  "last_node_id": 418,
-  "last_link_id": 806,
+  "last_node_id": 419,
+  "last_link_id": 808,
   "nodes": [
     {
       "id": 395,
@@ -507,6 +507,15 @@
           }
         },
         {
+          "localized_name": "skip_existing",
+          "name": "skip_existing",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "skip_existing"
+          }
+        },
+        {
           "localized_name": "cut_mode",
           "name": "cut_mode",
           "type": "COMBO",
@@ -572,6 +581,7 @@
         8,
         5,
         10,
+        true,
         "silence"
       ],
       "title": "1. Split Audio Chunk"
@@ -716,7 +726,7 @@
           "localized_name": "session",
           "name": "session",
           "type": "STRING",
-          "link": null,
+          "link": 807,
           "widget": {
             "name": "session"
           }
@@ -725,7 +735,7 @@
           "localized_name": "filename",
           "name": "filename",
           "type": "STRING",
-          "link": null,
+          "link": 808,
           "widget": {
             "name": "filename"
           }
@@ -784,6 +794,81 @@
     },
     {
       "id": 415,
+      "type": "LTXLongformAudioName",
+      "pos": [
+        2620,
+        6700
+      ],
+      "size": [
+        360,
+        110
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "suffix",
+          "name": "suffix",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "suffix"
+          }
+        },
+        {
+          "localized_name": "source_title",
+          "name": "source_title",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "source_title"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "name",
+          "name": "name",
+          "type": "STRING",
+          "links": [
+            807
+          ]
+        },
+        {
+          "localized_name": "filename",
+          "name": "filename",
+          "type": "STRING",
+          "links": [
+            808
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-ltx-longform",
+        "ver": "1.0.0",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        },
+        "Node name for S&R": "LTXLongformAudioName"
+      },
+      "widgets_values": [
+        ".mp4",
+        ""
+      ],
+      "title": "Name run from audio filename (unlink to type your own)"
+    },
+    {
+      "id": 416,
       "type": "MarkdownNote",
       "pos": [
         -1620,
@@ -807,7 +892,7 @@
       ]
     },
     {
-      "id": 416,
+      "id": 417,
       "type": "MarkdownNote",
       "pos": [
         -1620,
@@ -831,7 +916,7 @@
       ]
     },
     {
-      "id": 417,
+      "id": 418,
       "type": "MarkdownNote",
       "pos": [
         -1620,
@@ -855,7 +940,7 @@
       ]
     },
     {
-      "id": 418,
+      "id": 419,
       "type": "MarkdownNote",
       "pos": [
         3070,
@@ -999,6 +1084,22 @@
       414,
       8,
       "AUDIO"
+    ],
+    [
+      807,
+      415,
+      0,
+      414,
+      6,
+      "STRING"
+    ],
+    [
+      808,
+      415,
+      1,
+      414,
+      7,
+      "STRING"
     ]
   ],
   "groups": [],

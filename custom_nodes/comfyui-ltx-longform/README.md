@@ -29,8 +29,23 @@ Start from `lipsync_audio_ia2v_workflow`, then:
 3. The final chunk stitches everything and, with `stop_when_done` on, clears the
    pending queue so the run ends by itself.
 
-To start a **fresh** render: set `chunk_index` back to 0 and change `session` on the
-Write node. Reusing a session would mix the old chunks into the new stitch.
+To start a **fresh** render: set `chunk_index` back to 0. The session name comes from
+the audio filename, so loading a different file is usually all it takes.
+
+**Resuming** an interrupted render needs no bookkeeping: queue from 0 again with
+`skip_existing` on. Chunks already on disk are skipped in milliseconds and it carries
+on from the gap. The final chunk always re-renders, because it is what triggers the
+stitch.
+
+## Naming runs from the audio file
+
+`LTX Longform: Name From Audio File` reads whichever file Load Audio has selected and
+outputs it two ways: `name` (bare stem, for `session`) and `filename` (stem + suffix,
+for the output video). Wired up by default, so a file called `Interview_Part_02.mp3`
+renders into `output/ltx_longform/Interview_Part_02/` and produces
+`Interview_Part_02.mp4` with nothing to type.
+
+Unlink either output and the Write node's own widget takes over again.
 
 Chunks must run in order. The **`session`** name is set on the Write node only - Start
 Frame reads it from there automatically, so there is nothing to keep in sync. Change it

@@ -135,6 +135,32 @@ def plan_chunks(total, target, min_len, max_len, pauses):
     return spans
 
 
+def _audio_basename(prompt, namer_id=None, default="run1"):
+    """The LoadAudio selection, without directory or extension.
+
+    Read from the prompt rather than taken as a link, so the file is chosen once
+    in LoadAudio and the name follows automatically.
+    """
+    if not isinstance(prompt, dict):
+        return default
+    want = ""
+    if namer_id is not None:
+        n = prompt.get(str(namer_id)) or {}
+        want = ((n.get("inputs") or {}).get("source_title") or "").strip()
+    for node in prompt.values():
+        if not isinstance(node, dict) or node.get("class_type") != "LoadAudio":
+            continue
+        if want and ((node.get("_meta") or {}).get("title") or "") != want:
+            continue
+        v = (node.get("inputs") or {}).get("audio")
+        if isinstance(v, str) and v.strip():
+            base = os.path.basename(v.strip().replace("\\", "/"))
+            stem = os.path.splitext(base)[0].strip()
+            if stem:
+                return stem
+    return default
+
+
 def _session_from_prompt(prompt, default="run1"):
     """Read the session name off the Write node.
 
@@ -149,11 +175,49 @@ def _session_from_prompt(prompt, default="run1"):
             if node.get("class_type") != "LTXLongformWrite":
                 continue
             v = (node.get("inputs") or {}).get("session")
-            # A converted-to-input widget shows up as [node_id, slot]; only a
-            # literal string is usable here.
             if isinstance(v, str) and v.strip():
                 return v.strip()
+            # A widget converted to an input arrives as [node_id, slot]. Follow it
+            # when it comes from the namer, otherwise Start Frame would fall back to
+            # the default while Write used the real name - the chain would break
+            # silently and every chunk would restart from the portrait.
+            if isinstance(v, list) and len(v) == 2:
+                src = prompt.get(str(v[0])) or {}
+                if src.get("class_type") == "LTXLongformAudioName":
+                    return _audio_basename(prompt, v[0], default)
     return default
+
+
+def _save_anchor(frame, path_noext):
+    """Store a chunk's last frame for the next chunk to start from.
+
+    PNG rather than .npy: at 1280x720 a float32 array is 11MB, so an hour-long
+    render would leave ~5.7GB of anchors on the volume for ~0.57GB of actual
+    information. The frame is quantised to 8 bits when encoded to video anyway, so
+    float32 precision buys nothing here - and a PNG can be opened, which makes
+    drift visible instead of a matter of opinion.
+    """
+    arr = (frame.detach().cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+    try:
+        from PIL import Image
+        Image.fromarray(arr).save(path_noext + ".png")
+        return path_noext + ".png"
+    except Exception:
+        np.save(path_noext + ".npy", frame.detach().cpu().numpy())
+        return path_noext + ".npy"
+
+
+def _load_anchor(path_noext):
+    """Read an anchor, accepting .npy from sessions started before the switch."""
+    png = path_noext + ".png"
+    if os.path.exists(png):
+        from PIL import Image
+        arr = np.array(Image.open(png).convert("RGB"), dtype=np.float32) / 255.0
+        return arr
+    npy = path_noext + ".npy"
+    if os.path.exists(npy):
+        return np.load(npy)
+    return None
 
 
 def _ffmpeg():
@@ -184,13 +248,22 @@ class LTXLongformSplit:
             # Optional, not required: a new required input invalidates every
             # workflow saved before it existed.
             "optional": {
+                "skip_existing": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Skip chunks whose .mp4 is already on disk, costing "
+                               "milliseconds each. Lets you resume an interrupted "
+                               "render by queueing from 0 again - no need to work "
+                               "out where it stopped. The final chunk always "
+                               "re-renders so the stitch has something to fire on."}),
                 "cut_mode": (["silence", "fixed"], {
                     "default": "silence",
                     "tooltip": "silence: cut inside pauses so chunks do not break "
                                "mid-word. fixed: cut on a strict grid, keeping pauses "
                                "mid-chunk where the model renders them more reliably. "
                                "Try fixed if speech starts early after a pause."}),
-            }
+            },
+            # Needed to resolve the session name for the skip-existing check.
+            "hidden": {"prompt": "PROMPT"},
         }
 
     RETURN_TYPES = ("AUDIO", "INT", "INT", "BOOLEAN")
@@ -199,7 +272,7 @@ class LTXLongformSplit:
     CATEGORY = "LTX Longform"
 
     def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
-              cut_mode="silence"):
+              cut_mode="silence", skip_existing=True, prompt=None):
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         target_seconds = max(min_seconds, min(max_seconds, target_seconds))
@@ -227,6 +300,17 @@ class LTXLongformSplit:
                 return tuple(ExecutionBlocker(None) for _ in range(4))
             # No blocker available: fall back to repeating the last chunk.
             print("[LTX Longform] past the last chunk; stop the queue manually.")
+
+        # Resume: a chunk already on disk does not need generating again. The last
+        # chunk is exempt because it is what triggers the stitch.
+        if (skip_existing and ExecutionBlocker is not None
+                and chunk_index < len(spans) - 1):
+            done = os.path.join(_session_dir(_session_from_prompt(prompt)),
+                                f"chunk_{chunk_index:04d}.mp4")
+            if os.path.exists(done):
+                print(f"[LTX Longform] chunk {chunk_index + 1}/{len(spans)} "
+                      f"already rendered - skipping.")
+                return tuple(ExecutionBlocker(None) for _ in range(4))
 
         idx = min(chunk_index, len(spans) - 1)
         start, dur = spans[idx]
@@ -272,8 +356,9 @@ class LTXLongformStartFrame:
         # not, so the previous chunk's frame has to be part of the cache key or
         # ComfyUI would serve chunk N-1's result again.
         session = _session_from_prompt(prompt)
-        p = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}.npy")
-        return f"{session}:{chunk_index}:{os.path.getmtime(p) if os.path.exists(p) else 0}"
+        base = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}")
+        p = next((base + e for e in (".png", ".npy") if os.path.exists(base + e)), None)
+        return f"{session}:{chunk_index}:{os.path.getmtime(p) if p else 0}"
 
     def pick(self, portrait, chunk_index, reanchor_every, prompt=None):
         session = _session_from_prompt(prompt)
@@ -284,13 +369,13 @@ class LTXLongformStartFrame:
             print(f"[LTX Longform] chunk {chunk_index}: re-anchoring to the portrait")
             return (portrait,)
 
-        prev = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}.npy")
-        if not os.path.exists(prev):
+        prev = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}")
+        arr = _load_anchor(prev)
+        if arr is None:
             print(f"[LTX Longform] WARNING: no last frame from chunk "
                   f"{chunk_index - 1} in session '{session}'; falling back to the "
                   f"portrait. (Queue chunks in order.)")
             return (portrait,)
-        arr = np.load(prev)
         return (torch.from_numpy(arr).unsqueeze(0),)
 
 
@@ -390,8 +475,7 @@ class LTXLongformWrite:
         os.replace(chunk_tmp, chunk_mp4)
 
         # Hand the last frame to the next queue item.
-        np.save(os.path.join(sdir, f"last_{chunk_index:04d}.npy"),
-                frames[-1].detach().cpu().numpy())
+        _save_anchor(frames[-1], os.path.join(sdir, f"last_{chunk_index:04d}"))
 
         msg = f"chunk {chunk_index + 1}/{total_chunks} written ({n} frames)"
         print(f"[LTX Longform] {msg}")
@@ -473,16 +557,61 @@ class LTXLongformWrite:
             raise RuntimeError(f"ffmpeg failed writing audio:\n{err.decode()[-1500:]}")
 
 
+class LTXLongformAudioName:
+    """Turn the loaded audio's filename into strings for session and output name.
+
+    Reads the selection straight off the LoadAudio node, so the file is picked once
+    and the run names itself. Unlink either output and the Write node's own widget
+    takes over again.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "suffix": ("STRING", {
+                    "default": ".mp4",
+                    "tooltip": "Appended to the filename output only; the session "
+                               "name stays bare."}),
+            },
+            "optional": {
+                "source_title": ("STRING", {
+                    "default": "",
+                    "tooltip": "Title of the Load Audio node to read, if the graph "
+                               "has more than one. Blank uses the first found."}),
+            },
+            "hidden": {"prompt": "PROMPT"},
+        }
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("name", "filename")
+    FUNCTION = "derive"
+    CATEGORY = "LTX Longform"
+
+    @classmethod
+    def IS_CHANGED(cls, suffix, source_title="", prompt=None, **kw):
+        # Swapping the audio file must invalidate the cache, or the previous run's
+        # name would persist and the new chunks would land in the old folder.
+        return f"{_audio_basename(prompt)}:{suffix}:{source_title}"
+
+    def derive(self, suffix, source_title="", prompt=None):
+        name = _audio_basename(prompt)
+        print(f"[LTX Longform] run name from audio file: {name}")
+        return (name, name + suffix)
+
+
 NODE_CLASS_MAPPINGS = {
     "LTXLongformSplit": LTXLongformSplit,
     "LTXLongformStartFrame": LTXLongformStartFrame,
     "LTXLongformWrite": LTXLongformWrite,
+    "LTXLongformAudioName": LTXLongformAudioName,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LTXLongformSplit": "LTX Longform: Split Audio Chunk",
     "LTXLongformStartFrame": "LTX Longform: Start Frame",
     "LTXLongformWrite": "LTX Longform: Write + Stitch",
+    "LTXLongformAudioName": "LTX Longform: Name From Audio File",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
