@@ -97,22 +97,37 @@ def _find_pauses(samples, sr, thresh_db=-34.0, min_len=0.25, win=0.02):
     return pauses
 
 
-def plan_chunks(total, target, min_len, max_len, pauses):
-    """Split [0,total] into whole-second spans, preferring cuts at pauses.
+def plan_chunks(total, target, min_len, max_len, pauses, pause_driven=False):
+    """Split [0,total] into whole-second spans.
 
     Whole seconds matter: the workflow computes frames as duration*fps + 1, and
     ComfyUI floor-divides that back into latent frames, so a fractional duration
     silently yields a shorter clip than asked for.
+
+    Two ways to choose a boundary:
+
+    * target-driven (default) - aim for `target`, and accept a nearby pause if one
+      falls inside [min_len, max_len].
+    * pause_driven - ignore `target` and take the *furthest* pause still within
+      max_len. Short speech segments get merged rather than generated separately,
+      chunk lengths follow the speech rather than the clock, and every boundary
+      lands in a pause. A time cut only happens when no pause is reachable at all,
+      which is forced by the model's length ceiling rather than a preference.
     """
     spans, pos = [], 0.0
     while total - pos > max_len:
-        ideal = pos + target
         lo, hi = pos + min_len, pos + max_len
         cands = [p for p in pauses if lo <= p <= hi]
-        cut = min(cands, key=lambda p: abs(p - ideal)) if cands else ideal
+        if pause_driven:
+            # Furthest reachable pause: fewest boundaries, so fewer joins and -
+            # in the FLF2V graph - fewer returns to the portrait pose.
+            cut = max(cands) if cands else pos + max_len
+        else:
+            ideal = pos + target
+            cut = min(cands, key=lambda p: abs(p - ideal)) if cands else ideal
         cut = pos + max(min_len, min(max_len, round(cut - pos)))
         if cut <= pos:
-            cut = pos + target
+            cut = pos + (max_len if pause_driven else target)
         spans.append((pos, int(round(cut - pos))))
         pos = cut
 
@@ -255,12 +270,15 @@ class LTXLongformSplit:
                                "render by queueing from 0 again - no need to work "
                                "out where it stopped. The final chunk always "
                                "re-renders so the stitch has something to fire on."}),
-                "cut_mode": (["silence", "fixed"], {
+                "cut_mode": (["silence", "pause", "fixed"], {
                     "default": "silence",
-                    "tooltip": "silence: cut inside pauses so chunks do not break "
-                               "mid-word. fixed: cut on a strict grid, keeping pauses "
-                               "mid-chunk where the model renders them more reliably. "
-                               "Try fixed if speech starts early after a pause."}),
+                    "tooltip": "silence: aim for target_seconds, but snap to a pause "
+                               "if one is in range. pause: ignore target_seconds and "
+                               "let the speech decide - take the furthest pause "
+                               "within max_seconds, merging segments too short to "
+                               "generate. fixed: a strict grid, keeping pauses "
+                               "mid-chunk; try it if speech starts early after a "
+                               "pause."}),
             },
             # Needed to resolve the session name for the skip-existing check.
             "hidden": {"prompt": "PROMPT"},
@@ -279,13 +297,14 @@ class LTXLongformSplit:
 
         wav, sr = audio["waveform"], int(audio["sample_rate"])
         total = wav.shape[-1] / sr
-        pauses = _find_pauses(_mono(wav), sr) if cut_mode == "silence" else []
+        pauses = _find_pauses(_mono(wav), sr) if cut_mode != "fixed" else []
         if chunk_index == 0:
             # Worth surfacing: pause detection is thresholded against the track's
             # peak, so music or room tone under the voice can leave it finding
             # nothing, and cuts then fall back to a fixed grid anyway.
             print(f"[LTX Longform] cut_mode={cut_mode}, pauses found: {len(pauses)}")
-        spans = plan_chunks(total, target_seconds, min_seconds, max_seconds, pauses)
+        spans = plan_chunks(total, target_seconds, min_seconds, max_seconds, pauses,
+                            pause_driven=(cut_mode == "pause"))
         if not spans:
             raise RuntimeError("Audio too short to split into chunks.")
 

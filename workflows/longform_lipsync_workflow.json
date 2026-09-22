@@ -579,10 +579,10 @@
       "widgets_values": [
         0,
         8,
-        5,
-        10,
+        3,
+        12,
         true,
-        "silence"
+        "pause"
       ],
       "title": "1. Split Audio Chunk"
     },
@@ -912,7 +912,7 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "### Cuts the long track into one chunk per run\n\nEvery queued item recomputes **the same plan** from the same audio, then takes\nits own slice. Nothing is cached or passed between runs, which is why the chunks\ntile the track exactly, with no gaps or overlaps.\n\n**How a boundary is picked**, walking forward from 0:\n\n1. Ideal cut = current position + `target_seconds`\n2. Allowed window = `[min_seconds, max_seconds]` from the current position\n3. Look for pauses inside that window; take the one nearest the ideal\n4. No pause there? Use the ideal\n5. Snap to a whole second, record the chunk, move on\n\nSo chunks vary in length: the target is a preference, the pauses win inside the\nallowed range.\n\n**`cut_mode`**\n- `silence` - cut inside pauses, so chunks never break mid-word. Each chunk then\n  begins and ends in silence.\n- `fixed` - cut on a strict grid, leaving pauses in the middle of a chunk. Try\n  this if speech seems to start early after a pause.\n\nPause detection is relative to the track's peak, so music or room tone under the\nvoice can find none - the console prints how many it found. Zero means every cut\nfell on the grid regardless of the mode.\n\n**Outputs**: this chunk's audio, its `duration` (drives the frame count), the\n`total_chunks` in the whole render, and `is_last`."
+        "### Cuts the long track into one chunk per run\n\nEvery queued item recomputes **the same plan** from the same audio, then takes\nits own slice. Nothing is cached or passed between runs, which is why the chunks\ntile the track exactly, with no gaps or overlaps.\n\n**How a boundary is picked**, walking forward from 0:\n\n1. Ideal cut = current position + `target_seconds`\n2. Allowed window = `[min_seconds, max_seconds]` from the current position\n3. Look for pauses inside that window; take the one nearest the ideal\n4. No pause there? Use the ideal\n5. Snap to a whole second, record the chunk, move on\n\nSo chunks vary in length: the target is a preference, the pauses win inside the\nallowed range.\n\n**`cut_mode`**\n- `pause` - **default**. Ignores `target_seconds` and lets the speech decide: takes\n  the furthest pause still within `max_seconds`, merging segments too short to\n  generate. Every boundary lands in silence and chunk lengths follow the talking.\n- `silence` - aims for `target_seconds`, snapping to a nearby pause if one is in\n  range.\n- `fixed` - a strict grid, leaving pauses mid-chunk. Try it if speech seems to start\n  early after a pause.\n\nA time cut only happens when no pause is reachable within `max_seconds` - the model's\nlength ceiling forcing it, not a preference.\n\nPause detection is relative to the track's peak, so music or room tone under the\nvoice can find none - the console prints how many it found. Zero means every cut\nfell on the grid regardless of the mode.\n\n**Outputs**: this chunk's audio, its `duration` (drives the frame count), the\n`total_chunks` in the whole render, and `is_last`."
       ]
     },
     {

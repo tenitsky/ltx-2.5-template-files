@@ -507,10 +507,10 @@
       "widgets_values": [
         0,
         8,
-        5,
-        10,
+        3,
+        12,
         true,
-        "silence"
+        "pause"
       ],
       "title": "1. Split Audio Chunk"
     },
@@ -767,7 +767,7 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "### Cuts the long track into one chunk per run\n\nEach queued item recomputes the same plan and takes its own slice, so chunks tile the\ntrack exactly - no gaps, no overlaps, nothing passed between runs.\n\nWalking forward from 0: ideal cut = position + `target_seconds`; look for a pause\ninside `[min_seconds, max_seconds]`; take the nearest one; otherwise use the ideal;\nsnap to a whole second. So lengths vary - the target is a preference and pauses win\ninside the range.\n\n**`cut_mode`** - `silence` cuts inside pauses so nothing breaks mid-word (each chunk\nthen begins and ends in silence); `fixed` cuts on a grid, keeping pauses mid-chunk.\nTry `fixed` if speech seems to start early after a pause. The console prints how many\npauses were found - zero means every cut fell on the grid anyway.\n\n**`skip_existing`** - chunks already on disk are skipped in milliseconds, so resuming\nan interrupted render is just queueing from 0 again. The last chunk always re-renders\nbecause it triggers the stitch."
+        "### Cuts the long track into one chunk per run\n\nEach queued item recomputes the same plan and takes its own slice, so chunks tile the\ntrack exactly - no gaps, no overlaps, nothing passed between runs.\n\nWalking forward from 0: ideal cut = position + `target_seconds`; look for a pause\ninside `[min_seconds, max_seconds]`; take the nearest one; otherwise use the ideal;\nsnap to a whole second. So lengths vary - the target is a preference and pauses win\ninside the range.\n\n**`cut_mode`** - `pause` (default) ignores `target_seconds` entirely and lets the\nspeech decide: it takes the furthest pause still within `max_seconds`, merging\nsegments too short to generate. Boundaries land in silence, chunk lengths follow the\ntalking. `silence` aims for `target_seconds` and snaps to a nearby pause if one is in\nrange. `fixed` uses a strict grid, keeping pauses mid-chunk - try it if speech seems\nto start early after a pause.\n\nA time cut only happens when no pause is reachable inside `max_seconds`; that is the\nmodel's length ceiling forcing it, not a preference. The console prints how many\npauses were found - zero means every cut fell on the ceiling regardless of mode.\n\n**`skip_existing`** - chunks already on disk are skipped in milliseconds, so resuming\nan interrupted render is just queueing from 0 again. The last chunk always re-renders\nbecause it triggers the stitch."
       ]
     },
     {

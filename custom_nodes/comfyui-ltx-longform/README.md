@@ -82,7 +82,20 @@ the output folder.
 - Per-chunk files are muxed with the audio they were conditioned on, so you can check a
   single chunk for sync on its own - the fastest way to tell a generation problem from
   an assembly one.
-- `cut_mode` on the Split node: `silence` cuts inside pauses (avoids breaking mid-word);
-  `fixed` cuts on a grid, keeping pauses mid-chunk. Try `fixed` if speech starts early
-  after a pause. The console prints how many pauses were detected.
+- `cut_mode` on the Split node:
+  - **`pause`** (default) - the speech decides. `target_seconds` is ignored; it takes
+    the furthest pause still within `max_seconds`, merging segments too short to
+    generate. Every boundary lands in silence and chunk lengths follow the talking. A
+    long unbroken sentence simply produces long chunks up to the ceiling.
+  - `silence` - aims for `target_seconds`, snapping to a nearby pause if one is in
+    range.
+  - `fixed` - a strict grid, keeping pauses mid-chunk. Try it if speech starts early
+    after a pause.
+
+  A time cut only happens when no pause is reachable within `max_seconds` - the
+  model's length ceiling forcing it, not a preference. The console prints how many
+  pauses were detected; zero means every cut fell on the ceiling regardless of mode.
+  A wider window finds more real pauses: on a 300s test with pauses 2-9s apart,
+  `min=5 max=10` forced 10 of 42 boundaries onto the clock, while `min=3 max=12`
+  forced 1 of 39.
 - Intermediates live in `output/ltx_longform/<session>/`.
