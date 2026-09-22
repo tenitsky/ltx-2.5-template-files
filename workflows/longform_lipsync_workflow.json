@@ -1,7 +1,7 @@
 {
   "id": "07824bbb-6672-4bb0-ac36-4313a519e35b",
   "revision": 0,
-  "last_node_id": 414,
+  "last_node_id": 418,
   "last_link_id": 806,
   "nodes": [
     {
@@ -403,8 +403,8 @@
       "id": 411,
       "type": "PrimitiveInt",
       "pos": [
-        -560,
-        7100
+        -1150,
+        6300
       ],
       "size": [
         260,
@@ -453,12 +453,12 @@
       "id": 412,
       "type": "LTXLongformSplit",
       "pos": [
-        -180,
-        7060
+        -1150,
+        7120
       ],
       "size": [
         330,
-        140
+        160
       ],
       "flags": {},
       "order": 0,
@@ -580,8 +580,8 @@
       "id": 413,
       "type": "LTXLongformStartFrame",
       "pos": [
-        -180,
-        6700
+        -1150,
+        6660
       ],
       "size": [
         330,
@@ -653,12 +653,12 @@
       "id": 414,
       "type": "LTXLongformWrite",
       "pos": [
-        2700,
-        6900
+        2620,
+        6400
       ],
       "size": [
         380,
-        200
+        220
       ],
       "flags": {},
       "order": 0,
@@ -781,6 +781,102 @@
         true
       ],
       "title": "3. Write + Stitch (auto-assembles on the last chunk)"
+    },
+    {
+      "id": 415,
+      "type": "MarkdownNote",
+      "pos": [
+        -1620,
+        6300
+      ],
+      "size": [
+        420,
+        300
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "What chunk_index does",
+      "properties": {},
+      "color": "#432",
+      "bgcolor": "#653",
+      "widgets_values": [
+        "### The loop counter\n\nLTX-2.5 can only generate ~10s at a time, so a long track is rendered as many\nchunks. **ComfyUI runs each node once per queued prompt**, so there is no loop\ninside the graph - this counter is the loop, and the batch count is how many\ntimes round.\n\n- Leave it on **increment**: each queued item gets the next index.\n- Set it to **0** to start a render from the beginning.\n- It feeds all three nodes below, so they always agree on which chunk this is.\n\nQueue a batch count **larger** than the number of chunks. You do not need the\nexact number: once the render is complete, surplus items are blocked and finish\nin milliseconds instead of generating anything."
+      ]
+    },
+    {
+      "id": 416,
+      "type": "MarkdownNote",
+      "pos": [
+        -1620,
+        7120
+      ],
+      "size": [
+        420,
+        470
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "1. Split - how chunks are chosen",
+      "properties": {},
+      "color": "#432",
+      "bgcolor": "#653",
+      "widgets_values": [
+        "### Cuts the long track into one chunk per run\n\nEvery queued item recomputes **the same plan** from the same audio, then takes\nits own slice. Nothing is cached or passed between runs, which is why the chunks\ntile the track exactly, with no gaps or overlaps.\n\n**How a boundary is picked**, walking forward from 0:\n\n1. Ideal cut = current position + `target_seconds`\n2. Allowed window = `[min_seconds, max_seconds]` from the current position\n3. Look for pauses inside that window; take the one nearest the ideal\n4. No pause there? Use the ideal\n5. Snap to a whole second, record the chunk, move on\n\nSo chunks vary in length: the target is a preference, the pauses win inside the\nallowed range.\n\n**`cut_mode`**\n- `silence` - cut inside pauses, so chunks never break mid-word. Each chunk then\n  begins and ends in silence.\n- `fixed` - cut on a strict grid, leaving pauses in the middle of a chunk. Try\n  this if speech seems to start early after a pause.\n\nPause detection is relative to the track's peak, so music or room tone under the\nvoice can find none - the console prints how many it found. Zero means every cut\nfell on the grid regardless of the mode.\n\n**Outputs**: this chunk's audio, its `duration` (drives the frame count), the\n`total_chunks` in the whole render, and `is_last`."
+      ]
+    },
+    {
+      "id": 417,
+      "type": "MarkdownNote",
+      "pos": [
+        -1620,
+        6660
+      ],
+      "size": [
+        420,
+        400
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "2. Start Frame - drift vs continuity",
+      "properties": {},
+      "color": "#432",
+      "bgcolor": "#653",
+      "widgets_values": [
+        "### Which image this chunk generates from\n\nLTX-2.5 I2V builds video *from* a start image. Normally that is the previous\nchunk's final frame, which is what makes motion flow across a boundary.\n\n**Why drift happens.** A generated frame is never identical to what it was\nconditioned on. Feed it back in and the next deviates slightly more - a photocopy\nof a photocopy. Errors tend to push the same way rather than cancel, so the face,\nexposure and colour all slide in one direction.\n\n**`reanchor_every = N`** hands the **original portrait** back every Nth chunk, so\ndrift can never exceed N-1 hops before resetting. The unit is chunks, not\nseconds: at ~7s chunks, `6` means a reset roughly every 40s.\n\n- `1` - every chunk from the portrait. No drift at all. For a static talking head\n  the reset is often barely visible; worth trying first.\n- `6` - default. Drift capped at 5 hops.\n- `0` - never reset. Perfect continuity, drift compounds across the whole render.\n\nThe cost of a reset is a visible snap back to the portrait's pose. A neutral,\nfront-facing portrait makes that cheap; a characterful one makes it obvious.\n\n**Re-anchor points also break the chain**, which is what lets chunk groups render\non separate GPUs in parallel."
+      ]
+    },
+    {
+      "id": 418,
+      "type": "MarkdownNote",
+      "pos": [
+        3070,
+        6400
+      ],
+      "size": [
+        420,
+        440
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "3. Write + Stitch",
+      "properties": {},
+      "color": "#432",
+      "bgcolor": "#653",
+      "widgets_values": [
+        "### Saves this chunk, and assembles the render on the last one\n\n**Trims the extra frame.** LTX returns `duration x fps + 1` frames. Keeping that\nspare frame on every chunk accumulates ~2s of progressive audio slip over a\n7-minute render, so each chunk is written at exactly `duration x fps`.\n\n**Uses your original audio.** Each chunk's generated audio is a VAE\nreconstruction of what went in. The final mux ignores all of it and uses the\nuntouched track, so quality is better and sync is exact by construction rather\nthan by luck.\n\n**`session`** - the folder under `output/ltx_longform/`. Set it **here only**;\nStart Frame reads it from this node automatically. Change it to begin a fresh\nrender - reusing one would mix old chunks into the new stitch.\n\n**`fps`** - must match `frame_rate` inside the generator subgraph, or the trim\nmaths is wrong and the audio drifts. Leave both at 24: frame counts must satisfy\n`frames % 8 == 1`, and at 24fps every whole-second duration works, while at\n25/30/50 most durations round *down*.\n\n**`stop_when_done`** - clears the pending queue after the final chunk, so a\ngenerous batch count or Run (Instant) ends by itself. Note it clears **all**\npending items, not only this render's.\n\nChunks are saved with their audio so you can check one for sync on its own - the\nquickest way to tell a generation problem from an assembly one.\n\n**Several pods can share one session folder.** A chunk counts as done when its\n.mp4 exists (written to a temp name and renamed atomically), so there is no index\nfile for concurrent pods to corrupt."
+      ]
     }
   ],
   "links": [
