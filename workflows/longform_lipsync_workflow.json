@@ -655,7 +655,7 @@
       },
       "widgets_values": [
         0,
-        6
+        1
       ],
       "title": "2. Start Frame (chains or re-anchors)"
     },
@@ -936,7 +936,7 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "### Which image this chunk generates from\n\nLTX-2.5 I2V builds video *from* a start image. Normally that is the previous\nchunk's final frame, which is what makes motion flow across a boundary.\n\n**Why drift happens.** A generated frame is never identical to what it was\nconditioned on. Feed it back in and the next deviates slightly more - a photocopy\nof a photocopy. Errors tend to push the same way rather than cancel, so the face,\nexposure and colour all slide in one direction.\n\n**`reanchor_every = N`** hands the **original portrait** back every Nth chunk, so\ndrift can never exceed N-1 hops before resetting. The unit is chunks, not\nseconds: at ~7s chunks, `6` means a reset roughly every 40s.\n\n- `1` - every chunk from the portrait. No drift at all. For a static talking head\n  the reset is often barely visible; worth trying first.\n- `6` - default. Drift capped at 5 hops.\n- `0` - never reset. Perfect continuity, drift compounds across the whole render.\n\nThe cost of a reset is a visible snap back to the portrait's pose. A neutral,\nfront-facing portrait makes that cheap; a characterful one makes it obvious.\n\n**Re-anchor points also break the chain**, which is what lets chunk groups render\non separate GPUs in parallel."
+        "### Which image this chunk generates from\n\nLTX-2.5 I2V builds video *from* a start image. Normally that is the previous\nchunk's final frame, which is what makes motion flow across a boundary.\n\n**Why drift happens.** A generated frame is never identical to what it was\nconditioned on. Feed it back in and the next deviates slightly more - a photocopy\nof a photocopy. Errors tend to push the same way rather than cancel, so the face,\nexposure and colour all slide in one direction.\n\n**`reanchor_every = N`** hands the **original portrait** back every Nth chunk, so\ndrift can never exceed N-1 hops before resetting. The unit is chunks, not\nseconds: at ~7s chunks, `6` means a reset roughly every 40s.\n\n- `1` - **default**. Every chunk starts from the portrait, so there is no drift at\n  all. For a static talking head the reset is usually barely visible.\n- `6` - drift capped at 5 hops, smoother motion across boundaries.\n- `0` - never reset. Perfect continuity, drift compounds across the whole render.\n\nThe cost of a reset is a visible snap back to the portrait's pose. A neutral,\nfront-facing portrait makes that cheap; a characterful one makes it obvious.\n\n**Re-anchor points also break the chain**, which is what lets chunk groups render\non separate GPUs in parallel."
       ]
     },
     {

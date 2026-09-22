@@ -338,8 +338,14 @@ class LTXLongformStartFrame:
             "required": {
                 "portrait": ("IMAGE",),
                 "chunk_index": ("INT", {"default": 0, "min": 0, "max": 100000}),
-                "reanchor_every": ("INT", {"default": 6, "min": 0, "max": 1000,
-                                           "tooltip": "0 = never re-anchor."}),
+                "reanchor_every": ("INT", {"default": 1, "min": 0, "max": 1000,
+                                           "tooltip": "Start every Nth chunk from the "
+                                                      "portrait instead of the previous "
+                                                      "chunk's last frame. 1 = every "
+                                                      "chunk, so no drift at all. Raise "
+                                                      "it for smoother motion across "
+                                                      "boundaries at the cost of drift. "
+                                                      "0 = never re-anchor."}),
             },
             # Session name is taken from the Write node so it is set in one place.
             "hidden": {"prompt": "PROMPT"},
