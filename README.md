@@ -89,7 +89,8 @@ Without `HF_TOKEN` the script still works — it falls back to an ungated mirror
 └── workflows/                           # auto-installed into ComfyUI's Workflows menu on boot
     ├── lipsync_audio_ia2v_workflow.json # photo + YOUR audio file → lipsynced video
     ├── lipsync_i2v_workflow.json        # photo + written dialogue → talking video (voice generated)
-    └── longform_lipsync_workflow.json   # photo + LONG audio → minutes-long video, auto-stitched
+    ├── longform_lipsync_workflow.json   # photo + LONG audio → minutes-long video, auto-stitched
+    └── longform_flf2v_workflow.json     # same, but both ends pinned → seamless joins
 ```
 
 ## Long-form (videos longer than ~10s)
@@ -101,6 +102,15 @@ chunks and stitched. Two ways, both installed automatically:
 once with `chunk_index = 0` to learn `total_chunks`, then queue with that batch count.
 The last chunk assembles `longform_final.mp4` by itself. See
 `custom_nodes/comfyui-ltx-longform/README.md`.
+
+**Two long-form workflows, pick by artifact.** `longform_lipsync_workflow` (I2V) starts
+each chunk from the portrait but ends wherever it ends, so every join is a small jump.
+`longform_flf2v_workflow` pins the **first and last** frame to the same portrait, so
+chunk N finishes on the exact frame chunk N+1 begins on — joins are continuous *and*
+there is no drift, which the I2V chain cannot do at once. The trade is that the subject
+returns to the portrait pose each chunk, which can read as a gentle loop, and FLF2V is
+single-stage so it skips the spatial upscale pass. Render a minute with each before
+committing to a long job.
 
 **From the CLI** — `/workspace/scripts/longform_lipsync.py` does the same thing with
 `--resume`, which is better for long unattended runs. Needs the workflow exported via
