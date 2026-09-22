@@ -368,7 +368,7 @@
         "Node name for S&R": "ResolutionSelector"
       },
       "widgets_values": [
-        "16:9 (Widescreen)",
+        "1:1 (Square)",
         0.9,
         32
       ]
