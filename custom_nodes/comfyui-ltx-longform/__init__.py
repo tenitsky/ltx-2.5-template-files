@@ -222,6 +222,46 @@ def _save_anchor(frame, path_noext):
         return path_noext + ".npy"
 
 
+def _anchor_base(session, chunk_index):
+    """Anchors live in a hidden subfolder so the session folder shows only mp4s."""
+    d = os.path.join(_session_dir(session), ".anchors")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"last_{chunk_index:04d}")
+
+
+def _anchors_needed(prompt):
+    """Whether any node will ever read a chunk's last frame.
+
+    Only a Start Frame that chains needs them. At reanchor_every=1 every chunk
+    starts from the portrait, and the FLF2V graph has no Start Frame at all - in
+    both cases writing anchors is pure waste. When the value cannot be read (a
+    linked widget, or no prompt), keep them: a missing anchor silently breaks the
+    chain, an unneeded one costs a megabyte.
+    """
+    if not isinstance(prompt, dict):
+        return True
+    for node in prompt.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") != "LTXLongformStartFrame":
+            continue
+        r = (node.get("inputs") or {}).get("reanchor_every", 1)
+        if not isinstance(r, int) or r != 1:
+            return True
+    return False
+
+
+def _find_anchor(session, chunk_index):
+    """Path (without extension) of a saved anchor, new location first."""
+    new = os.path.join(_session_dir(session), ".anchors", f"last_{chunk_index:04d}")
+    old = os.path.join(_session_dir(session), f"last_{chunk_index:04d}")
+    for base in (new, old):          # old: sessions started before the move
+        for ext in (".png", ".npy"):
+            if os.path.exists(base + ext):
+                return base
+    return None
+
+
 def _load_anchor(path_noext):
     """Read an anchor, accepting .npy from sessions started before the switch."""
     png = path_noext + ".png"
@@ -381,8 +421,9 @@ class LTXLongformStartFrame:
         # not, so the previous chunk's frame has to be part of the cache key or
         # ComfyUI would serve chunk N-1's result again.
         session = _session_from_prompt(prompt)
-        base = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}")
-        p = next((base + e for e in (".png", ".npy") if os.path.exists(base + e)), None)
+        base = _find_anchor(session, chunk_index - 1)
+        p = next((base + e for e in (".png", ".npy")
+                  if base and os.path.exists(base + e)), None)
         return f"{session}:{chunk_index}:{os.path.getmtime(p) if p else 0}"
 
     def pick(self, portrait, chunk_index, reanchor_every, prompt=None):
@@ -394,8 +435,8 @@ class LTXLongformStartFrame:
             print(f"[LTX Longform] chunk {chunk_index}: re-anchoring to the portrait")
             return (portrait,)
 
-        prev = os.path.join(_session_dir(session), f"last_{chunk_index - 1:04d}")
-        arr = _load_anchor(prev)
+        prev = _find_anchor(session, chunk_index - 1)
+        arr = _load_anchor(prev) if prev else None
         if arr is None:
             print(f"[LTX Longform] WARNING: no last frame from chunk "
                   f"{chunk_index - 1} in session '{session}'; falling back to the "
@@ -442,7 +483,9 @@ class LTXLongformWrite:
                                "generous batch count (or Run Instant) stops by "
                                "itself. This clears ALL pending items, including "
                                "unrelated jobs."}),
-            }
+            },
+            # Used to decide whether the next chunk will need this one's last frame.
+            "hidden": {"prompt": "PROMPT"},
         }
 
     RETURN_TYPES = ("STRING",)
@@ -453,7 +496,7 @@ class LTXLongformWrite:
 
     def write(self, images, original_audio, chunk_index, total_chunks,
               duration, fps, session, filename, chunk_audio=None,
-              stop_when_done=True):
+              stop_when_done=True, prompt=None):
         ff = _ffmpeg()
         sdir = _session_dir(session)
 
@@ -499,8 +542,10 @@ class LTXLongformWrite:
                 os.remove(chunk_wav)
         os.replace(chunk_tmp, chunk_mp4)
 
-        # Hand the last frame to the next queue item.
-        _save_anchor(frames[-1], os.path.join(sdir, f"last_{chunk_index:04d}"))
+        # Hand the last frame to the next queue item - but only if something will
+        # read it. By default nothing does.
+        if _anchors_needed(prompt):
+            _save_anchor(frames[-1], _anchor_base(session, chunk_index))
 
         msg = f"chunk {chunk_index + 1}/{total_chunks} written ({n} frames)"
         print(f"[LTX Longform] {msg}")
@@ -545,7 +590,7 @@ class LTXLongformWrite:
         finally:
             # A 7-minute track as uncompressed WAV is ~74MB; it has served its
             # purpose the moment the mux completes.
-            for tmp in (wav_path, silent):
+            for tmp in (wav_path, silent, listfile):
                 if os.path.exists(tmp):
                     os.remove(tmp)
 
