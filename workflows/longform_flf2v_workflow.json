@@ -192,7 +192,7 @@
         "previewExposures": []
       },
       "widgets_values": [
-        "Use the provided start image as the first frame and the provided end image as the final frame anchor. The video opens on the back of the robotic hand, four fingers slightly curled, joints glowing faintly in the darkness, a low electrical hum filling the space. The hand rotates slowly at the wrist, turning from the back view toward the palm side, the four visible fingers uncurling gently one by one, starting with the index finger, then the middle, ring, and pinky, each joint clicking softly. As the palm turns upward, the thumb swings out from the side of the hand into view, clearly separate from the four fingers, all five fingers spreading open. A blue energy crystal fades into existence above the palm, its hum rising into a resonant tone, thin energy threads coiling around it, particles crackling softly as they spiral away like sparks. The crystal rotates slowly, hovering above the fully open hand, light spilling between the five spread fingers, the crystal's steady hum filling the silence as the video ends on the open palm with the glowing crystal.\n",
+        "Use the provided start image as the first frame and the provided end image as the final frame anchor. Use the provided start image as the first frame. The person speaks directly to camera, their lip movements matching the provided speech audio exactly. Natural facial expression, subtle eyebrow and jaw movement, occasional blinking, small head motions while talking. The framing, lighting, wardrobe and background stay exactly as in the start image. Static camera, steady medium close-up. No text, no captions, no black frames.",
         false,
         5,
         1280,
@@ -246,10 +246,10 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "Note: Model Links",
+      "title": "Note: Inputs",
       "properties": {},
       "widgets_values": [
-        "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links\n\n**Input Assets** \n\n- [robot_hand.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/robot_hand.png) — required workflow input (`input/robot_hand.png`)\n- [robot_hand_energy.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/robot_hand_energy.png) — required workflow input (`input/robot_hand_energy.png`)\n\n**diffusion_models**\n\n- [ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors](https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors)\n\n**vae**\n\n- [ltx-2.5-video-vae-bf16.safetensors](https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors)\n- [ltx-2.5-audio-vae-bf16.safetensors](https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-audio-vae-bf16.safetensors)\n\n**text_encoders**\n\n- [gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors](https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors)\n- [gemma4_e2b_it_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/gemma-4/resolve/main/text_encoders/gemma4_e2b_it_int8_convrot.safetensors) — *optional, only needed when **prompt_enhance** is enabled*\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   └── ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors\n│   ├── 📂 vae/\n│   │   ├── ltx-2.5-video-vae-bf16.safetensors\n│   │   └── ltx-2.5-audio-vae-bf16.safetensors\n│   └── 📂 text_encoders/\n│       ├── gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors\n│       └── gemma4_e2b_it_int8_convrot.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+        "## Inputs\n\n- **Load Portrait** - your person, front-facing, face clearly visible. It drives **both** the first and last frame.\n- **Load Voiceover** - your speech track, any length. Use **stereo**; mono often gives weak or no lipsync.\n\nDrop files in `ComfyUI/input/`, or upload them through the nodes.\n\nGuide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)"
       ],
       "color": "#222",
       "bgcolor": "#000"
@@ -2353,7 +2353,7 @@
               "secondTabWidth": 65
             },
             "widgets_values": [
-              "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, deformed facial features, asymmetrical face, missing facial features, extra limbs, disfigured hands, wrong hand count, artifacts around text, unreadable text on shirt or hat, incorrect lettering on cap (“PNTR”), incorrect t-shirt slogan (“JUST DO IT”), missing microphone, misplaced microphone, inconsistent perspective, camera shake, incorrect depth of field, background too sharp, background clutter, distracting reflections, harsh shadows, inconsistent lighting direction, color banding, cartoonish rendering, 3D CGI look, unrealistic materials, uncanny valley effect, incorrect ethnicity, wrong gender, exaggerated expressions, smiling, laughing, exaggerated sadness, wrong gaze direction, eyes looking at camera, mismatched lip sync, silent or muted audio, distorted voice, robotic voice, echo, background noise, off-sync audio, missing sniff sounds, incorrect dialogue, added dialogue, repetitive speech, jittery movement, awkward pauses, incorrect timing, unnatural transitions, inconsistent framing, tilted camera, missing door or shelves, missing shallow depth of field, flat lighting, inconsistent tone, cinematic oversaturation, stylized filters, or AI artifacts."
+              "static image, still frame, frozen, no motion, motionless subject, mismatched lip sync, mouth closed while speaking, distorted face, deformed facial features, warped mouth, extra limbs, text, captions, subtitles, watermark, cartoon, 3D render, video game, camera shake, zoom, scene change, cut to another shot, black frames"
             ],
             "color": "#323",
             "bgcolor": "#535"
@@ -3703,7 +3703,7 @@
               "ver": "0.30.0"
             },
             "widgets_values": [
-              ""
+              "Use the provided start image as the first frame and the provided end image as the final frame anchor. Use the provided start image as the first frame. The person speaks directly to camera, their lip movements matching the provided speech audio exactly. Natural facial expression, subtle eyebrow and jaw movement, occasional blinking, small head motions while talking. The framing, lighting, wardrobe and background stay exactly as in the start image. Static camera, steady medium close-up. No text, no captions, no black frames."
             ]
           },
           {
