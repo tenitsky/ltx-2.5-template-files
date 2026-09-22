@@ -1,8 +1,8 @@
 {
   "id": "0112e9af-5129-48ba-af78-92c40ac40b40",
   "revision": 0,
-  "last_node_id": 266,
-  "last_link_id": 400,
+  "last_node_id": 268,
+  "last_link_id": 402,
   "nodes": [
     {
       "id": 39,
@@ -124,7 +124,7 @@
           "widget": {
             "name": "value_3"
           },
-          "link": null
+          "link": 401
         },
         {
           "label": "height",
@@ -133,7 +133,7 @@
           "widget": {
             "name": "value_4"
           },
-          "link": null
+          "link": 402
         },
         {
           "label": "fram_rate",
@@ -724,6 +724,63 @@
     },
     {
       "id": 264,
+      "type": "ResolutionSelector",
+      "pos": [
+        1300,
+        3560
+      ],
+      "size": [
+        270,
+        170
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "links": [
+            401
+          ]
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "links": [
+            402
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.68",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        },
+        "Node name for S&R": "ResolutionSelector"
+      },
+      "widgets_values": [
+        "16:9 (Widescreen)",
+        0.9,
+        32
+      ],
+      "title": "Resolution (megapixels + aspect)"
+    },
+    {
+      "id": 265,
       "type": "MarkdownNote",
       "pos": [
         -950,
@@ -747,7 +804,7 @@
       ]
     },
     {
-      "id": 265,
+      "id": 266,
       "type": "MarkdownNote",
       "pos": [
         -950,
@@ -771,7 +828,7 @@
       ]
     },
     {
-      "id": 266,
+      "id": 267,
       "type": "MarkdownNote",
       "pos": [
         2960,
@@ -792,6 +849,30 @@
       "bgcolor": "#653",
       "widgets_values": [
         "### Saves this chunk, assembles the whole render on the last one\n\n**Trims the extra frame.** LTX returns `duration x fps + 1` frames; keeping the spare\none on every chunk accumulates ~2s of progressive audio slip over a long render, so\neach chunk is written at exactly `duration x fps`.\n\n**Uses your original audio.** Each chunk's generated audio is a VAE reconstruction of\nwhat went in, so the final mux uses the untouched track - better quality, and sync\nexact by construction.\n\n**`session` and `filename`** come from the audio filename via the namer node below, so\n`Interview_02.mp3` renders into `.../Interview_02/` and produces `Interview_02.mp4`.\nUnlink either to type your own.\n\n**`fps`** must match `fram_rate` inside the generator, or the trim maths is wrong.\nLeave both at 24: frame counts must satisfy `frames % 8 == 1`, and at 24fps every\nwhole-second duration works while 25/30/50 mostly round down.\n\n**`stop_when_done`** clears the pending queue after the final chunk, so a generous\nbatch count or Run (Instant) ends by itself. Several pods can share one session\nfolder - a chunk counts as done when its .mp4 exists, written atomically."
+      ]
+    },
+    {
+      "id": 268,
+      "type": "MarkdownNote",
+      "pos": [
+        1300,
+        3760
+      ],
+      "size": [
+        300,
+        520
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "Note: Size Settings Reference",
+      "properties": {},
+      "color": "#432",
+      "bgcolor": "#653",
+      "widgets_values": [
+        "| megapixels | Aspect | Output (multiple=32) |\n|---|---|---|\n| 0.2 | 16:9 | 608 x 352 |\n| 0.3 | 16:9 | 736 x 416 |\n| 0.4 | 16:9 | 864 x 480 |\n| 0.5 | 16:9 | 960 x 544 |\n| 0.6 | 16:9 | 1056 x 608 |\n| 0.7 | 16:9 | 1152 x 640 |\n| 0.8 | 16:9 | 1216 x 672 |\n| 0.9 | 16:9 | 1280 x 736 |\n| 1.0 | 16:9 | 1376 x 768 |\n| 1.2 | 16:9 | 1504 x 832 |\n| 1.5 | 16:9 | 1664 x 928 |\n| 1.8 | 16:9 | 1824 x 1024 |\n| 2.0 | 16:9 | 1920 x 1088 |\n"
       ]
     }
   ],
@@ -907,6 +988,22 @@
       262,
       7,
       "STRING"
+    ],
+    [
+      401,
+      264,
+      0,
+      251,
+      6,
+      "INT"
+    ],
+    [
+      402,
+      264,
+      1,
+      251,
+      7,
+      "INT"
     ]
   ],
   "groups": [],
