@@ -57,6 +57,13 @@ the output folder.
   model reconcile the text against the image and accelerates drift.
 - If a chunk fails, re-queue that index, then run the last chunk again. Stitching
   refuses to run with gaps rather than silently shifting the timeline.
+- **Several GPUs can share one render.** With `reanchor_every = N`, chunks 0..N-1,
+  N..2N-1 and so on are independent (each group starts from the portrait), so pods
+  sharing a network volume can each take a group - set `chunk_index` to that group's
+  first index and use the same `session`. There is no shared index file to corrupt: a
+  chunk is "done" when its .mp4 exists, and each is written to a temp name and renamed
+  atomically. Run the last chunk once every other chunk is on disk; if any are still
+  missing it refuses and names them.
 - Per-chunk files are muxed with the audio they were conditioned on, so you can check a
   single chunk for sync on its own - the fastest way to tell a generation problem from
   an assembly one.

@@ -27,7 +27,6 @@ Three things are handled at assembly time because they cannot be fixed afterward
 No dependencies beyond what ComfyUI already has, plus ffmpeg.
 """
 
-import json
 import os
 import shutil
 import subprocess
@@ -360,6 +359,10 @@ class LTXLongformWrite:
         n, h, w, _ = arr.shape
 
         chunk_mp4 = os.path.join(sdir, f"chunk_{chunk_index:04d}.mp4")
+        # Encode to a temp name and rename. Rename is atomic on one filesystem,
+        # so the finished path either does not exist or is a complete chunk -
+        # which is what lets its mere existence stand in for a manifest entry.
+        chunk_tmp = os.path.join(sdir, f".writing_{chunk_index:04d}.mp4")
         cmd = [ff, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
         # Frames go to ffmpeg on stdin, and stdin can only carry one stream, so the
@@ -374,7 +377,7 @@ class LTXLongformWrite:
         else:
             cmd += ["-an"]
         cmd += ["-c:v", "libx264", "-crf", "16", "-preset", "medium",
-                "-pix_fmt", "yuv420p", chunk_mp4]
+                "-pix_fmt", "yuv420p", chunk_tmp]
         try:
             p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
             _, err = p.communicate(arr.tobytes())
@@ -384,15 +387,11 @@ class LTXLongformWrite:
         finally:
             if chunk_wav and os.path.exists(chunk_wav):
                 os.remove(chunk_wav)
+        os.replace(chunk_tmp, chunk_mp4)
 
         # Hand the last frame to the next queue item.
         np.save(os.path.join(sdir, f"last_{chunk_index:04d}.npy"),
                 frames[-1].detach().cpu().numpy())
-
-        manifest = os.path.join(sdir, "manifest.json")
-        done = json.load(open(manifest)) if os.path.exists(manifest) else {}
-        done[str(chunk_index)] = os.path.basename(chunk_mp4)
-        json.dump(done, open(manifest, "w"), indent=1)
 
         msg = f"chunk {chunk_index + 1}/{total_chunks} written ({n} frames)"
         print(f"[LTX Longform] {msg}")
@@ -400,18 +399,24 @@ class LTXLongformWrite:
         if chunk_index < total_chunks - 1:
             return (msg,)
 
-        # Final chunk: stitch. Missing chunks are reported rather than silently
-        # skipped, since a gap would shift everything after it out of sync.
-        missing = [i for i in range(total_chunks) if str(i) not in done]
+        # Final chunk: stitch. Presence of the file IS the record - there is no
+        # shared index to update, so several pods can write into one session
+        # folder on a network volume without a write race between them.
+        paths = [os.path.join(sdir, f"chunk_{i:04d}.mp4") for i in range(total_chunks)]
+        missing = [i for i, p in enumerate(paths) if not os.path.exists(p)]
         if missing:
+            # A gap would shift everything after it out of sync, so refuse rather
+            # than quietly produce a subtly wrong video.
             raise RuntimeError(
-                f"Cannot stitch: chunks {missing} were never rendered. Re-queue them "
-                f"with the same session name, then run the last chunk again.")
+                f"Cannot stitch: chunks {missing} are not on disk yet. If another "
+                f"pod is still rendering them, wait for it and re-run this last "
+                f"chunk. Otherwise queue the missing indices in session '{session}' "
+                f"and run the last chunk again.")
 
         listfile = os.path.join(sdir, "concat.txt")
         with open(listfile, "w", encoding="utf-8") as f:
-            for i in range(total_chunks):
-                f.write(f"file '{os.path.join(sdir, done[str(i)])}'\n")
+            for p in paths:
+                f.write(f"file '{p}'\n")
 
         silent = os.path.join(sdir, "video_only.mp4")
         subprocess.run([ff, "-y", "-v", "error", "-f", "concat", "-safe", "0",
