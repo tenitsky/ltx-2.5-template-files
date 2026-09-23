@@ -1,5 +1,17 @@
 #!/bin/bash
 
+# Apply before the image starts Jupyter; an empty JUPYTER_PASSWORD alone can
+# trigger automatic token generation in /start.sh.
+if [ "${JUPYTER_NO_AUTH:-1}" = "1" ]; then
+  echo "Jupyter authentication disabled: anyone with access to its URL can run commands."
+  if ! sed -i -E 's/--IdentityProvider\.token="\$\{JUPYTER_PASSWORD(:-)?\}"/--IdentityProvider.token="" --PasswordIdentityProvider.hashed_password=""/' /start.sh ||
+     ! grep -Fq -- '--IdentityProvider.token="" --PasswordIdentityProvider.hashed_password=""' /start.sh; then
+    echo "FATAL: could not configure Jupyter authentication in /start.sh."
+    echo "Check the image startup command, or set JUPYTER_NO_AUTH=0 to keep image authentication."
+    exit 1
+  fi
+fi
+
 echo "=== Ensuring System Dependencies are Installed ==="
 apt-get update && apt-get install -y wget ca-certificates
 

@@ -6,6 +6,7 @@ desktop.ini
 # Local experimentation
 __pycache__/
 *.pyc
+/backup/
 
 # Secrets - never commit
 *.env
