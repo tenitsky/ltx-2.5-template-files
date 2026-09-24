@@ -96,12 +96,29 @@ mkdir -p "$COMFYUI_PATH/models/model_patches"
 # parallelises transfers, which is much faster than wget on 20GB files, but it does not
 # resume a partial file, so wget stays as the fallback for flaky connections.
 echo "Installing fast downloader (optional)..."
-# huggingface_hub 1.x replaced hf_transfer with the Xet backend; the [hf-xet] extra and
-# HF_XET_HIGH_PERFORMANCE are the current names. The old [hf_transfer] extra no longer
-# exists and HF_HUB_ENABLE_HF_TRANSFER is only warned about, never honoured.
-pip install -q -U "huggingface_hub[hf-xet]" 2>/dev/null || pip install -q -U huggingface_hub 2>/dev/null
-HF_BIN="$(command -v hf || command -v huggingface-cli || true)"
-[ -n "$HF_BIN" ] && echo "Fast downloader: $HF_BIN" || echo "Fast downloader unavailable, using wget."
+# Install into a throwaway venv, NOT the environment ComfyUI imports from.
+# `hf` is only a downloader - ComfyUI never imports huggingface_hub directly - but
+# transformers pins huggingface-hub<1.0, so upgrading it in place (current releases are
+# 2.x) breaks transformers' dependency check and ComfyUI then fails to start with
+# "from transformers import CLIPTokenizer". An isolated venv cannot cause that.
+#
+# Note huggingface_hub 1.x replaced hf_transfer with the Xet backend: the [hf_transfer]
+# extra no longer exists and HF_HUB_ENABLE_HF_TRANSFER is only warned about, never
+# honoured. [hf-xet] and HF_XET_HIGH_PERFORMANCE are the current names.
+HF_VENV="/workspace/.hf-cli"
+HF_BIN=""
+if [ ! -x "$HF_VENV/bin/hf" ]; then
+  python3 -m venv "$HF_VENV" 2>/dev/null && \
+    "$HF_VENV/bin/pip" install -q -U "huggingface_hub[hf-xet]" 2>/dev/null
+fi
+for cand in "$HF_VENV/bin/hf" "$HF_VENV/bin/huggingface-cli"; do
+  [ -x "$cand" ] && { HF_BIN="$cand"; break; }
+done
+if [ -n "$HF_BIN" ]; then
+  echo "Fast downloader: $HF_BIN (isolated venv)"
+else
+  echo "Fast downloader unavailable, using wget."
+fi
 
 # A truncated HTML error page saved as .safetensors looks plausible until load time,
 # so treat anything under 1MB as a failed download.
