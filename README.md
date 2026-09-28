@@ -87,7 +87,7 @@ Without `HF_TOKEN` the script still works — it falls back to an ungated mirror
 ## After it boots
 
 - Open ComfyUI (port 8188) → **Workflow → Browse Templates** → search **"LTX-2.5"** for the three native workflows: **Text to Video (T2V)**, **Image to Video (I2V)**, **FLF2V** (first/last frame).
-- Or open the **Workflows** sidebar for `longform_flf2v_workflow` (portrait + audio, rendered in chunks). See below.
+- Or open the **Workflows** sidebar for `ltx2-5_long_video_workflow` (portrait + audio, rendered in chunks). See below.
 - First boot downloads ~40–47 GB from HF; later boots skip everything and start in seconds (files persist on the network volume).
 - Downloads use **`hf_transfer`** (multi-threaded, typically several times faster than a single `wget` stream). Each file tries, in order: official repo → mirror via `hf`, then official → mirror via `wget`. The `wget` stage resumes partial files, so a dropped connection is never fatal.
 - Re-runs are safe: every step is skip-if-present.
@@ -102,7 +102,7 @@ Without `HF_TOKEN` the script still works — it falls back to an ungated mirror
 ├── scripts/
 │   └── longform_lipsync.py              # same job, driven from the CLI instead
 └── workflows/                           # auto-installed into ComfyUI's Workflows menu on boot
-    └── longform_flf2v_workflow.json     # same, but both ends pinned → seamless joins
+    └── ltx2-5_long_video_workflow.json   # portrait + audio, both ends pinned → seamless joins
 ```
 
 ## Long-form (videos longer than ~10s)
@@ -110,12 +110,12 @@ Without `HF_TOKEN` the script still works — it falls back to an ungated mirror
 LTX-2.5 caps out around 10s per generation, so a 7-minute track is rendered as ~50
 chunks and stitched. Two ways, both installed automatically:
 
-**In ComfyUI** — open `longform_flf2v_workflow`, set Load Image + Load Audio, queue
+**In ComfyUI** — open `ltx2-5_long_video_workflow`, set Load Image + Load Audio, queue
 once with `chunk_index = 0` to learn `total_chunks`, then queue with that batch count.
 The last chunk assembles `longform_final.mp4` by itself. See
 `custom_nodes/comfyui-ltx-longform/README.md`.
 
-`longform_flf2v_workflow` pins the **first and last** frame to the same portrait
+`ltx2-5_long_video_workflow` pins the **first and last** frame to the same portrait
 to reduce jumps between chunks. The subject returns to the portrait pose each
 chunk, which can look like a loop. This workflow skips the spatial upscale pass.
 
