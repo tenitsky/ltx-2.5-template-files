@@ -1,5 +1,7 @@
 # LTX 2.5 — RunPod ComfyUI Template
 
+> 📖 **Step-by-step guide:** [A consistent talking avatar from one photo with LTX-2.5 lip sync](https://tenitsky.com/guides/ltx-2-5-talking-avatar/) · more free templates and ComfyUI guides at [tenitsky.com](https://tenitsky.com/)
+
 One-shot template that installs and runs **Lightricks LTX-2.5** (22B video + synced-audio model, natively supported in ComfyUI) on RunPod. Based on the same flow as `reference-setup.sh` (Z-Image template).
 
 On first pod boot it automatically:
@@ -173,3 +175,14 @@ Access everything via the pod's **Connect** menu in the RunPod console.
 - Official weights: https://huggingface.co/Lightricks/LTX-2.5
 - Node pack: https://github.com/Lightricks/ComfyUI-LTXVideo
 - Low-VRAM alternative (manual): GGUF quants `Abiray/LTX-2.5-Distilled-GGUF` + `city96/ComfyUI-GGUF` custom node
+
+<!-- tenitsky.com links -->
+## More templates and guides
+
+- 🐙 [LongCat-Video-Avatar 1.5: long-form talking avatar](https://github.com/tenitsky/longcat-avatar)
+- 🐙 [SoulX-FlashHead Pro: long talking heads on one GPU](https://github.com/tenitsky/flashhead-pro-avatar)
+- 📖 [Free AI voiceovers with Qwen3-TTS: 9 voices, voice design and cloning](https://tenitsky.com/guides/qwen3-tts-voiceovers/)
+- ☁️ New to RunPod? [Introduction to RunPod: running ComfyUI in the cloud](https://tenitsky.com/guides/introduction-to-runpod/)
+- 🎓 New to ComfyUI? [ComfyUI for beginners: build a text-to-image workflow node by node](https://tenitsky.com/guides/comfyui-node-basics-text-to-image/)
+- 🌐 All templates and guides: [tenitsky.com](https://tenitsky.com/)
+- 📺 YouTube: [AI Art Pipeline](https://www.youtube.com/@aiartpipeline)
